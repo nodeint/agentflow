@@ -14,13 +14,13 @@ class CodexAdapter(BaseCLIAdapter):
         model: str,
         workspace: str,
         prompt: str,
-        provider_session_id: Optional[str],
-        new_provider_session_id: Optional[str],
+        agent_id: Optional[str],
+        new_agent_id: Optional[str],
         prompt_file: Path,
         last_message_file: Path,
         thinking: Optional[str] = None,
     ) -> CommandSpec:
-        del new_provider_session_id, prompt_file
+        del new_agent_id, prompt_file
         cmd = [
             "codex",
             "exec",
@@ -36,8 +36,8 @@ class CodexAdapter(BaseCLIAdapter):
         ]
         if thinking:
             cmd.extend(["-c", f'model_reasoning_effort="{thinking}"'])
-        if provider_session_id:
-            cmd.extend(["resume", provider_session_id, "-"])
+        if agent_id:
+            cmd.extend(["resume", agent_id, "-"])
         else:
             # `--approve-for-me` already routes through the workspace-write sandbox.
             # Passing `--sandbox` together is rejected by current `codex exec`.
@@ -47,7 +47,7 @@ class CodexAdapter(BaseCLIAdapter):
     def parse_response(
         self, stdout: str, last_message_file: Path
     ) -> Tuple[str, Optional[str]]:
-        provider_session_id = None
+        agent_id = None
         last_text = None
         for raw_line in stdout.splitlines():
             line = raw_line.strip()
@@ -63,7 +63,7 @@ class CodexAdapter(BaseCLIAdapter):
             if event_type == "thread.started":
                 thread_id = event.get("thread_id")
                 if isinstance(thread_id, str) and thread_id:
-                    provider_session_id = thread_id
+                    agent_id = thread_id
             elif event_type == "item.completed":
                 item = event.get("item")
                 if isinstance(item, dict) and item.get("type") == "agent_message":
@@ -83,7 +83,7 @@ class CodexAdapter(BaseCLIAdapter):
             file_text = last_message_file.read_text(encoding="utf-8").strip()
             if file_text:
                 last_text = file_text
-        return (last_text if last_text is not None else stdout.strip()), provider_session_id
+        return (last_text if last_text is not None else stdout.strip()), agent_id
 
     def parse_progress_event(self, line: str) -> Optional[Dict[str, Any]]:
         try:

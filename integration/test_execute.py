@@ -37,16 +37,16 @@ class ExecuteTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             result = objects[0]
             self.assertEqual(
-                [item.get("provider_session_id") for item in result["stages"]],
+                [item.get("agent_id") for item in result["stages"]],
                 [GROK_SESSION, GROK_SESSION],
             )
             self.assertEqual(result["stop_reason"], "completed")
-            self.assertEqual(result["run_status"], "completed")
+            self.assertEqual(result["session_status"], "completed")
             published = (
                 workspace
                 / ".agentflow"
-                / "runs"
-                / result["run_id"]
+                / "sessions"
+                / result["session_id"]
                 / "outputs"
                 / "plan"
             )
@@ -70,7 +70,7 @@ class ExecuteTests(unittest.TestCase):
             )
             self.assertEqual(code, 0, stderr)
             result = objects[0]
-            self.assertEqual(result["stages"][0]["provider_session_id"], CODEX_THREAD)
+            self.assertEqual(result["stages"][0]["agent_id"], CODEX_THREAD)
             self.assertEqual(result["stages"][0]["outcome_status"], "complete")
             self.assertEqual(result["stop_reason"], "stage")
             artifact = Path(result["stages"][0]["artifact_directory"]) / "note.md"

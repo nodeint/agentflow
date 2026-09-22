@@ -38,7 +38,6 @@ def _snapshot(
         outcome_status=outcome_status,
         artifact_directory=directory,
         outcome_decision=decision,
-        runner_session_id="sess",
     )
 
 
@@ -76,12 +75,12 @@ class BuildStagePromptTests(unittest.TestCase):
                 task="Do work",
                 snapshots=[_snapshot("plan", 1, upstream)],
                 workspace=workspace,
-                prior_run_id="prior-1",
+                prior_session_id="prior-1",
                 prior_outputs={"plan": {"path": "outputs/plan"}},
             )
             plan_path = (upstream / "plan.md").resolve()
             prior_path = (
-                workspace / ".agentflow" / "runs" / "prior-1" / "outputs" / "plan"
+                workspace / ".agentflow" / "sessions" / "prior-1" / "outputs" / "plan"
             ).resolve()
         self.assertEqual(
             prompt,
@@ -95,9 +94,9 @@ class BuildStagePromptTests(unittest.TestCase):
                     "Constraints:\n"
                     "- Do not write implementation code.\n"
                     "- Do not infer decisions from review prose.",
-                    f"Upstream artifacts on this run:\n- plan: {plan_path}",
+                    f"Upstream artifacts on this session:\n- plan: {plan_path}",
                     "Required prior workflow result:\n"
-                    "- run: prior-1\n"
+                    "- session: prior-1\n"
                     f"- outputs: {prior_path}",
                     "Write the file artifact as `implementation-result.md` "
                     "in the execution artifacts directory.",
@@ -129,7 +128,7 @@ class BuildStagePromptTests(unittest.TestCase):
                 workspace=Path(tmp),
             )
         self.assertNotIn("Write the file artifact", prompt)
-        self.assertIn("Upstream artifacts on this run:", prompt)
+        self.assertIn("Upstream artifacts on this session:", prompt)
         self.assertIn(str((plan_dir / "plan.md").resolve()), prompt)
 
     def test_review_uses_the_latest_plan_attempt_after_revise(self) -> None:
@@ -180,7 +179,7 @@ class BuildStagePromptTests(unittest.TestCase):
         self.assertIn("Write the file artifact as `test-result.md`", prompt)
         self.assertNotIn("review-work:", prompt)
 
-    def test_includes_prior_run_published_outputs(self) -> None:
+    def test_includes_prior_session_published_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             prompt = build_stage_prompt(
@@ -189,11 +188,11 @@ class BuildStagePromptTests(unittest.TestCase):
                 task="Do work",
                 snapshots=[],
                 workspace=workspace,
-                prior_run_id="prior-1",
+                prior_session_id="prior-1",
                 prior_outputs={"plan": {"path": "outputs/plan"}},
             )
-        self.assertIn("- run: prior-1", prompt)
-        expected = (workspace / ".agentflow" / "runs" / "prior-1" / "outputs" / "plan")
+        self.assertIn("- session: prior-1", prompt)
+        expected = (workspace / ".agentflow" / "sessions" / "prior-1" / "outputs" / "plan")
         self.assertIn(str(expected.resolve()), prompt)
 
     def test_rejects_an_undeclared_stage(self) -> None:

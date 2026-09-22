@@ -44,8 +44,8 @@ class AgentToolRunner:
         model: str,
         prompt: str,
         workspace: str,
-        runner_session_id: Optional[str] = None,
-        run_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        resume_execution_id: Optional[str] = None,
         stage_id: str = "agent",
         stage_attempt: Optional[int] = None,
         execution_order: Optional[int] = None,
@@ -66,50 +66,48 @@ class AgentToolRunner:
             raise ValueError(f"Unsupported CLI provider: {provider}. Supported: {supported}")
 
         store = SessionStore(workspace_path)
-        runner_session_id, record, is_new, context = store.load_or_create(
-            runner_session_id,
+        record, is_new, context = store.load_or_create(
             provider_key,
             model,
             thinking,
             workspace_path,
-            run_id,
+            session_id,
             stage_id,
             stage_attempt,
             execution_order,
             prompt,
+            resume_execution_id=resume_execution_id,
         )
         if not is_new:
             self._validate_session_profile(record.provider, record.model, record.thinking, provider_key, model, thinking)
         starts_new_session = is_new
 
-        new_session = (
-            adapter.create_new_session(runner_session_id) if starts_new_session else None
-        )
-        if new_session and new_session.provider_session_id:
-            record.provider_session_id = new_session.provider_session_id
+        new_session = adapter.create_new_session() if starts_new_session else None
+        if new_session and new_session.agent_id:
+            record.agent_id = new_session.agent_id
         record.history.append({"role": "user", "content": prompt})
         record.status = "running"
-        store.save(runner_session_id, record, context)
+        store.save(record, context)
         store.save_execution(context, record, "running")
         event_reporter = ProviderEventReporter(store, context, provider_key, model)
 
-        provider_session_id = None if starts_new_session else record.provider_session_id
+        agent_id = None if starts_new_session else record.agent_id
         turn_prompt = (
             prompt
-            if starts_new_session or provider_session_id
+            if starts_new_session or agent_id
             else flatten_history(record.history)
         )
         stage = None
-        if run_id is not None:
-            run_status = store.read_run_status(context.run_id)
-            workflow_path = run_status.get("workflow_path")
+        if session_id is not None:
+            session_status = store.read_session_status(context.session_id)
+            workflow_path = session_status.get("workflow_path")
             if (
                 isinstance(workflow_path, str)
-                and run_status.get("workflow_id") != "agent"
+                and session_status.get("workflow_id") != "agent"
             ):
                 stage = load_stage(store.workspace, workflow_path, stage_id)
         decision_values = stage.decision_values if stage is not None else ()
-        if run_id is not None:
+        if session_id is not None:
             turn_prompt = add_stage_outcome_contract(turn_prompt, decision_values)
         artifact_name = stage.artifact if stage is not None else None
         turn_prompt = add_artifact_context(
@@ -128,7 +126,7 @@ class AgentToolRunner:
                 model,
                 workspace_path,
                 turn_prompt,
-                provider_session_id,
+                agent_id,
                 new_session,
                 thinking,
                 event_reporter,
@@ -138,9 +136,9 @@ class AgentToolRunner:
         except CancellationRequested:
             event_reporter.emit("provider.cancelled", "cancellation requested")
             record.status = "cancelled"
-            store.save(runner_session_id, record, context)
+            store.save(record, context)
             store.save_execution(context, record, "cancelled")
-            log(f"Runner session {runner_session_id} marked cancelled.")
+            log(f"Execution {context.execution_id} marked cancelled.")
             raise
 
         event_reporter.emit(
@@ -148,7 +146,7 @@ class AgentToolRunner:
             "completed" if invoke_error is None else invoke_error,
         )
 
-        record.provider_session_id = parsed_provider_id or record.provider_session_id
+        record.agent_id = parsed_provider_id or record.agent_id
         record.model = model
         record.thinking = thinking
         record.workspace = str(workspace_path)
@@ -157,7 +155,7 @@ class AgentToolRunner:
             try:
                 outcome = parse_stage_outcome(
                     response_text,
-                    required=run_id is not None,
+                    required=session_id is not None,
                     decision_values=decision_values,
                 )
             except ValueError as exc:
@@ -179,7 +177,7 @@ class AgentToolRunner:
                 )
         record.status = "completed" if invoke_error is None else "failed"
         record.history.append({"role": "assistant", "content": response_text})
-        store.save(runner_session_id, record, context)
+        store.save(record, context)
         store.save_response(context, response_text)
         store.save_execution(
             context,
@@ -188,17 +186,16 @@ class AgentToolRunner:
             error=invoke_error,
             outcome=outcome,
         )
-        run_status = store.read_run_status(context.run_id)
+        session_status = store.read_session_status(context.session_id)
         return {
-            "runner_session_id": runner_session_id,
-            "provider_session_id": record.provider_session_id or "",
+            "agent_id": record.agent_id or "",
             "thinking": record.thinking or "",
-            "run_id": context.run_id,
+            "session_id": context.session_id,
             "execution_id": context.execution_id,
             "artifact_directory": str(context.artifact_directory),
             "outcome_status": outcome.status if outcome else "",
             "outcome_decision": outcome.decision if outcome and outcome.decision else "",
-            "run_status": str(run_status.get("status") or ""),
+            "session_status": str(session_status.get("status") or ""),
             "response": response_text,
         }
 
@@ -208,7 +205,7 @@ class AgentToolRunner:
         model: str,
         workspace: Path,
         prompt: str,
-        provider_session_id: Optional[str],
+        agent_id: Optional[str],
         new_session: Optional[NewSession],
         thinking: Optional[str],
         event_reporter: ProviderEventReporter,
@@ -224,9 +221,9 @@ class AgentToolRunner:
                 model=model,
                 workspace=str(workspace),
                 prompt=prompt,
-                provider_session_id=provider_session_id,
-                new_provider_session_id=(
-                    new_session.provider_session_id if new_session else None
+                agent_id=agent_id,
+                new_agent_id=(
+                    new_session.agent_id if new_session else None
                 ),
                 prompt_file=prompt_file,
                 last_message_file=last_message_file,
@@ -274,5 +271,5 @@ class AgentToolRunner:
         requested_profile = (provider, model, thinking)
         if previous_profile != requested_profile:
             raise ValueError(
-                "Cannot resume a runner session with a different provider, model, or thinking level."
+                "Cannot resume an agent session with a different provider, model, or thinking level."
             )

@@ -14,13 +14,12 @@ class CommandSpec:
 
 @dataclass(frozen=True)
 class NewSession:
-    provider_session_id: Optional[str] = None
-    provider_session_source: Optional[str] = None
+    agent_id: Optional[str] = None
+    agent_id_source: Optional[str] = None
 
 
 class BaseCLIAdapter(ABC):
-    def create_new_session(self, runner_session_id: str) -> NewSession:
-        del runner_session_id
+    def create_new_session(self) -> NewSession:
         return NewSession()
 
     @abstractmethod
@@ -29,8 +28,8 @@ class BaseCLIAdapter(ABC):
         model: str,
         workspace: str,
         prompt: str,
-        provider_session_id: Optional[str],
-        new_provider_session_id: Optional[str],
+        agent_id: Optional[str],
+        new_agent_id: Optional[str],
         prompt_file: Path,
         last_message_file: Path,
         thinking: Optional[str] = None,
@@ -41,7 +40,7 @@ class BaseCLIAdapter(ABC):
     def parse_response(
         self, stdout: str, last_message_file: Path
     ) -> Tuple[str, Optional[str]]:
-        """Return (response_text, provider_session_id)."""
+        """Return (response_text, agent_id)."""
 
     def parse_progress_event(self, line: str) -> Optional[Dict[str, Any]]:
         """Return safe, structured progress from one provider stdout line."""

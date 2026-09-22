@@ -138,7 +138,7 @@ def json_objects(text: str) -> list[dict]:
 
 
 def execution_statuses(workspace: Path) -> list[str]:
-    runs = workspace / ".agentflow" / "runs"
+    runs = workspace / ".agentflow" / "sessions"
     statuses = []
     for path in sorted(runs.glob("*/executions/*/execution.json")):
         payload = json.loads(path.read_text(encoding="utf-8"))

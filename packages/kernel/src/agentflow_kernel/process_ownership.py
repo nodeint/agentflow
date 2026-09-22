@@ -54,7 +54,7 @@ class ProcessStartInfo:
 @dataclass(frozen=True)
 class ReapDecision:
     action: str
-    run_id: str
+    session_id: str
     execution_id: str
     owner_pid: Optional[int] = None
     error: Optional[str] = None
@@ -187,15 +187,15 @@ def collect_process_start_info(
     )
 
 
-def still_running_message(run_id: str, execution_id: str, owner_pid: int) -> str:
+def still_running_message(session_id: str, execution_id: str, owner_pid: int) -> str:
     return (
-        f"Run {run_id} execution {execution_id} is still running under owner pid {owner_pid}."
+        f"Session {session_id} execution {execution_id} is still running under owner pid {owner_pid}."
     )
 
 
-def unverified_process_message(run_id: str, execution_id: str) -> str:
+def unverified_process_message(session_id: str, execution_id: str) -> str:
     return (
-        f"Run {run_id} execution {execution_id} has an unverified live provider process."
+        f"Session {session_id} execution {execution_id} has an unverified live provider process."
     )
 
 
@@ -203,11 +203,11 @@ def raise_reap_decision(decision: ReapDecision) -> None:
     if decision.action == REAP_STILL_RUNNING:
         owner_pid = decision.owner_pid if decision.owner_pid is not None else 0
         raise ValueError(
-            still_running_message(decision.run_id, decision.execution_id, owner_pid)
+            still_running_message(decision.session_id, decision.execution_id, owner_pid)
         )
     if decision.action == REAP_UNVERIFIED:
         raise ValueError(
-            unverified_process_message(decision.run_id, decision.execution_id)
+            unverified_process_message(decision.session_id, decision.execution_id)
         )
 
 
@@ -216,35 +216,35 @@ def classify_orphaned_execution(
     execution_directory: Path,
     inspector: ProcessInspector,
 ) -> ReapDecision:
-    run_id = str(metadata.get("run_id") or "")
+    session_id = str(metadata.get("session_id") or "")
     execution_id = str(metadata.get("execution_id") or execution_directory.name)
     if metadata.get("status") != "running":
-        return ReapDecision(REAP_NOOP, run_id, execution_id)
+        return ReapDecision(REAP_NOOP, session_id, execution_id)
     hostname = metadata.get("hostname")
     if isinstance(hostname, str) and hostname != inspector.hostname():
-        return ReapDecision(REAP_UNVERIFIED, run_id, execution_id)
+        return ReapDecision(REAP_UNVERIFIED, session_id, execution_id)
     owner_pid = _optional_int(metadata.get("owner_pid"))
     owner_state = _owner_state(metadata, owner_pid, inspector)
     if owner_state == "alive":
         return ReapDecision(
-            REAP_STILL_RUNNING, run_id, execution_id, owner_pid=owner_pid
+            REAP_STILL_RUNNING, session_id, execution_id, owner_pid=owner_pid
         )
     if owner_state in {"unreadable", "unverified", "missing"}:
-        return ReapDecision(REAP_UNVERIFIED, run_id, execution_id, owner_pid=owner_pid)
+        return ReapDecision(REAP_UNVERIFIED, session_id, execution_id, owner_pid=owner_pid)
     provider_pid = _optional_int(metadata.get("provider_pid"))
     if provider_pid is None:
-        return ReapDecision(REAP_UNVERIFIED, run_id, execution_id, owner_pid=owner_pid)
+        return ReapDecision(REAP_UNVERIFIED, session_id, execution_id, owner_pid=owner_pid)
     provider_probe = inspector.probe_pid(provider_pid)
     if provider_probe == PID_GONE:
         return ReapDecision(
             REAP_ALREADY_EXITED,
-            run_id,
+            session_id,
             execution_id,
             owner_pid=owner_pid,
             error=ERROR_ALREADY_EXITED,
         )
     if provider_probe != PID_PRESENT:
-        return ReapDecision(REAP_UNVERIFIED, run_id, execution_id, owner_pid=owner_pid)
+        return ReapDecision(REAP_UNVERIFIED, session_id, execution_id, owner_pid=owner_pid)
     stored_boot = metadata.get("boot_id")
     current_boot = inspector.boot_id()
     if (
@@ -255,7 +255,7 @@ def classify_orphaned_execution(
     ):
         return ReapDecision(
             REAP_BOOT_MISMATCH,
-            run_id,
+            session_id,
             execution_id,
             owner_pid=owner_pid,
             error=ERROR_BOOT_MISMATCH,
@@ -263,12 +263,12 @@ def classify_orphaned_execution(
     if process_identity_matches(metadata, execution_directory, inspector):
         return ReapDecision(
             REAP_REAPED,
-            run_id,
+            session_id,
             execution_id,
             owner_pid=owner_pid,
             error=ERROR_REAPED,
         )
-    return ReapDecision(REAP_UNVERIFIED, run_id, execution_id, owner_pid=owner_pid)
+    return ReapDecision(REAP_UNVERIFIED, session_id, execution_id, owner_pid=owner_pid)
 
 
 def process_identity_matches(

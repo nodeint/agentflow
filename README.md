@@ -4,11 +4,11 @@ Coordinator and workflow runner. The workspace has three packages:
 
 | Package | Import | Role |
 | :--- | :--- | :--- |
-| `packages/kernel` | `agentflow_kernel` | Workflow selection, execute, run records, and the session store. |
+| `packages/kernel` | `agentflow_kernel` | Workflow selection, execute, session records, and the session store. |
 | `packages/adapters` | `agentflow_adapters` | Headless `grok` and `codex` CLIs. |
 | `packages/cli` | `agentflow_cli` | `agentflow` command, usage help, and the interactive coordinator. |
 
-A project keeps its own `.agentflow/` config, workflows, and runs. This repository does not.
+A project keeps its own `.agentflow/` config, workflows, and sessions. This repository does not.
 
 ## Setup
 

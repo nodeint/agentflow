@@ -45,7 +45,7 @@ def classify_provider_error(message: Optional[str]) -> Dict[str, str]:
 class ProviderEvent:
     event: str
     provider: str
-    run_id: str
+    session_id: str
     execution_id: str
     stage_id: str
     timestamp: str = field(default_factory=utc_now)
@@ -56,7 +56,7 @@ class ProviderEvent:
         return {
             "event": self.event,
             "provider": self.provider,
-            "run_id": self.run_id,
+            "session_id": self.session_id,
             "execution_id": self.execution_id,
             "stage_id": self.stage_id,
             "timestamp": self.timestamp,
@@ -89,7 +89,7 @@ class ProviderEventReporter:
         provider_event = ProviderEvent(
             event=event,
             provider=self.provider,
-            run_id=self.context.run_id,
+            session_id=self.context.session_id,
             execution_id=self.context.execution_id,
             stage_id=self.store.stage_id(self.context),
             summary=summary,

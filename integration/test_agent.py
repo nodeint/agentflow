@@ -16,7 +16,7 @@ from integration.support import GROK_CONFIG, GROK_SESSION, run_main, write_works
 
 @unittest.skipUnless(os.name == "posix", "provider processes require POSIX")
 class AgentTests(unittest.TestCase):
-    def test_agent_writes_a_run_record(self) -> None:
+    def test_agent_writes_a_session_record(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             write_workspace(workspace, GROK_CONFIG, {})
@@ -38,9 +38,9 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(len(objects), 1)
             result = objects[0]
             self.assertEqual(result["outcome_status"], "complete")
-            self.assertEqual(result["provider_session_id"], GROK_SESSION)
+            self.assertEqual(result["agent_id"], GROK_SESSION)
             status_path = (
-                workspace / ".agentflow" / "runs" / result["run_id"] / "status.json"
+                workspace / ".agentflow" / "sessions" / result["session_id"] / "status.json"
             )
             self.assertTrue(status_path.is_file())
             status = json.loads(status_path.read_text(encoding="utf-8"))

@@ -27,7 +27,7 @@ def print_agent(result: dict[str, Any], *, role: str, provider: str, model: str)
         ("role", role),
         ("model", f"{provider}/{model}"),
         ("outcome", outcome),
-        ("run", str(result.get("run_id") or "")),
+        ("session", str(result.get("session_id") or "")),
         ("execution", str(result.get("execution_id") or "")),
     )
     for label, value in rows:
@@ -37,16 +37,16 @@ def print_agent(result: dict[str, Any], *, role: str, provider: str, model: str)
         console.print(line)
 
 
-def print_runs(
+def print_sessions(
     rows: list[tuple[str, str, str, str, str, str, str, str]],
 ) -> None:
     console = _stdout()
     if not rows:
-        console.print(Text("No runs.", style="dim"))
+        console.print(Text("No sessions.", style="dim"))
         return
     table = Table(header_style="bold")
     for title in (
-        "Run",
+        "Session",
         "Workflow",
         "Status",
         "Execution",
@@ -56,9 +56,9 @@ def print_runs(
     ):
         table.add_column(title)
     for row in rows:
-        _, run_id, workflow_id, status, execution_id, decision, outputs, task = row
+        _, session_id, workflow_id, status, execution_id, decision, outputs, task = row
         table.add_row(
-            Text(run_id),
+            Text(session_id),
             Text(workflow_id),
             _status_text(status),
             Text(execution_id),
@@ -73,7 +73,7 @@ def print_watch_snapshot(snapshot: dict[str, Any]) -> None:
     table = Table(show_header=False)
     table.add_column(style="dim")
     table.add_column()
-    table.add_row("run_id", Text(str(snapshot.get("run_id") or "--")))
+    table.add_row("session_id", Text(str(snapshot.get("session_id") or "--")))
     table.add_row("status", _status_text(str(snapshot.get("status") or "unknown")))
     workflow_id = snapshot.get("workflow_id")
     if isinstance(workflow_id, str) and workflow_id:

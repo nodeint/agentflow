@@ -52,6 +52,6 @@ uv run python -m unittest discover -s integration -t . -p 'test_*.py'
 - They call `agentflow_cli.run.main` and reach the real adapters through executables named `grok` and `codex` on `PATH`.
 - Those executables are `integration/fixtures/bin/grok` and `integration/fixtures/bin/codex`. They must not invoke the real grok or codex CLIs.
 - An integration module must not import a package `tests` module.
-- Assert the exit code and the run record. Do not re-test a policy that already has a package test.
+- Assert the exit code and the session record. Do not re-test a policy that already has a package test.
 
 Touched tests must map to a production module and a High path.

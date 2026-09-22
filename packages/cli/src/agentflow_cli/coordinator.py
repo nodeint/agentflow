@@ -18,7 +18,7 @@ def build_coordinator_prompt(workspace: Path) -> str:
         "## This session\n\n"
         f"Config: `{config_path}`\n"
         f"Workflows: `{workflows_path}`\n"
-        "Do not create a run until the user supplies a task and selects a workflow.\n"
+        "Do not create a session until the user supplies a task and selects a workflow.\n"
         "Start by asking what they want to accomplish and which workflow to run, "
         "if that is not already clear.\n"
     )

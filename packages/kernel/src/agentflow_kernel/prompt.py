@@ -15,7 +15,7 @@ def build_stage_prompt(
     task: str,
     snapshots: Sequence[ExecutionSnapshot],
     workspace: Path,
-    prior_run_id: Optional[str] = None,
+    prior_session_id: Optional[str] = None,
     prior_outputs: Optional[Mapping[str, Any]] = None,
 ) -> str:
     stage = workflow.stages.get(stage_id)
@@ -35,8 +35,8 @@ def build_stage_prompt(
         sections.append("\n".join(lines))
     upstream = _upstream_artifact_lines(workflow, stage.depends_on, snapshots)
     if upstream:
-        sections.append("Upstream artifacts on this run:\n" + "\n".join(upstream))
-    prior = _prior_result_lines(workspace, prior_run_id, prior_outputs)
+        sections.append("Upstream artifacts on this session:\n" + "\n".join(upstream))
+    prior = _prior_result_lines(workspace, prior_session_id, prior_outputs)
     if prior:
         sections.append("Required prior workflow result:\n" + "\n".join(prior))
     if stage.artifact:
@@ -67,13 +67,13 @@ def _upstream_artifact_lines(
 
 def _prior_result_lines(
     workspace: Path,
-    prior_run_id: Optional[str],
+    prior_session_id: Optional[str],
     prior_outputs: Optional[Mapping[str, Any]],
 ) -> list[str]:
-    if not prior_run_id:
+    if not prior_session_id:
         return []
-    lines = [f"- run: {prior_run_id}"]
-    paths = _prior_output_paths(workspace, prior_run_id, prior_outputs)
+    lines = [f"- session: {prior_session_id}"]
+    paths = _prior_output_paths(workspace, prior_session_id, prior_outputs)
     if paths:
         lines.append("- outputs: " + ", ".join(paths))
     return lines
@@ -81,21 +81,21 @@ def _prior_result_lines(
 
 def _prior_output_paths(
     workspace: Path,
-    prior_run_id: str,
+    prior_session_id: str,
     prior_outputs: Optional[Mapping[str, Any]],
 ) -> list[str]:
     if not prior_outputs:
         return []
     paths: list[str] = []
     for entry in prior_outputs.values():
-        path = _absolute_output_path(workspace, prior_run_id, entry)
+        path = _absolute_output_path(workspace, prior_session_id, entry)
         if path is not None:
             paths.append(str(path))
     return paths
 
 
 def _absolute_output_path(
-    workspace: Path, prior_run_id: str, entry: Any
+    workspace: Path, prior_session_id: str, entry: Any
 ) -> Optional[Path]:
     if not isinstance(entry, dict):
         return None
@@ -105,4 +105,4 @@ def _absolute_output_path(
     path = Path(raw.strip())
     if path.is_absolute():
         return path
-    return (workspace / ".agentflow" / "runs" / prior_run_id / path).resolve()
+    return (workspace / ".agentflow" / "sessions" / prior_session_id / path).resolve()

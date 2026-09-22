@@ -19,7 +19,7 @@ from agentflow_kernel.workflow import (
     WorkflowDocument,
     WorkflowOutput,
 )
-from tests.support import ScriptedAdapter, write_plan_review_run
+from tests.support import ScriptedAdapter, write_plan_review_session
 
 
 def _plan_review() -> WorkflowDocument:
@@ -74,7 +74,7 @@ class OutputPublicationTests(unittest.TestCase):
         )
 
     def test_approve_publishes_the_reviewed_plan_artifact(self) -> None:
-        workspace, run_id = write_plan_review_run()
+        workspace, session_id = write_plan_review_session()
         runner = AgentToolRunner(
             adapters={
                 "fake": ScriptedAdapter(
@@ -87,23 +87,23 @@ class OutputPublicationTests(unittest.TestCase):
             },
             timeout_sec=10,
         )
-        runner.run("fake", "m1", "plan", str(workspace), run_id=run_id, stage_id="plan")
+        runner.run("fake", "m1", "plan", str(workspace), session_id=session_id, stage_id="plan")
         review = runner.run(
-            "fake", "m1", "review", str(workspace), run_id=run_id, stage_id="review-plan"
+            "fake", "m1", "review", str(workspace), session_id=session_id, stage_id="review-plan"
         )
-        run_directory = workspace / ".agentflow" / "runs" / run_id
-        status = json.loads((run_directory / "status.json").read_text(encoding="utf-8"))
+        session_directory = workspace / ".agentflow" / "sessions" / session_id
+        status = json.loads((session_directory / "status.json").read_text(encoding="utf-8"))
         self.assertEqual(
-            (run_directory / "outputs" / "plan").read_text(encoding="utf-8"),
+            (session_directory / "outputs" / "plan").read_text(encoding="utf-8"),
             "# Plan v1\n",
         )
         self.assertEqual(status["status"], "completed")
-        self.assertEqual(review["run_status"], "completed")
+        self.assertEqual(review["session_status"], "completed")
 
     def test_missing_or_empty_artifact_fails_the_producing_stage(self) -> None:
         for body in (None, "   \n"):
             with self.subTest(body=body):
-                workspace, run_id = write_plan_review_run()
+                workspace, session_id = write_plan_review_session()
                 artifacts = None if body is None else [body]
                 result = AgentToolRunner(
                     adapters={
@@ -113,27 +113,27 @@ class OutputPublicationTests(unittest.TestCase):
                     },
                     timeout_sec=10,
                 ).run(
-                    "fake", "m1", "plan", str(workspace), run_id=run_id, stage_id="plan"
+                    "fake", "m1", "plan", str(workspace), session_id=session_id, stage_id="plan"
                 )
-                run_directory = workspace / ".agentflow" / "runs" / run_id
+                session_directory = workspace / ".agentflow" / "sessions" / session_id
                 execution = json.loads(
                     (
-                        run_directory
+                        session_directory
                         / "executions"
                         / result["execution_id"]
                         / "execution.json"
                     ).read_text(encoding="utf-8")
                 )
                 status = json.loads(
-                    (run_directory / "status.json").read_text(encoding="utf-8")
+                    (session_directory / "status.json").read_text(encoding="utf-8")
                 )
                 self.assertEqual(execution["status"], "failed")
                 self.assertIn("artifact missing", execution["error"])
                 self.assertEqual(status["status"], "active")
-                self.assertFalse((run_directory / "outputs").exists())
+                self.assertFalse((session_directory / "outputs").exists())
 
     def test_prose_approval_without_a_decision_header_fails(self) -> None:
-        workspace, run_id = write_plan_review_run()
+        workspace, session_id = write_plan_review_session()
         runner = AgentToolRunner(
             adapters={
                 "fake": ScriptedAdapter(
@@ -146,24 +146,24 @@ class OutputPublicationTests(unittest.TestCase):
             },
             timeout_sec=10,
         )
-        runner.run("fake", "m1", "plan", str(workspace), run_id=run_id, stage_id="plan")
+        runner.run("fake", "m1", "plan", str(workspace), session_id=session_id, stage_id="plan")
         review = runner.run(
-            "fake", "m1", "review", str(workspace), run_id=run_id, stage_id="review-plan"
+            "fake", "m1", "review", str(workspace), session_id=session_id, stage_id="review-plan"
         )
-        run_directory = workspace / ".agentflow" / "runs" / run_id
+        session_directory = workspace / ".agentflow" / "sessions" / session_id
         execution = json.loads(
             (
-                run_directory
+                session_directory
                 / "executions"
                 / review["execution_id"]
                 / "execution.json"
             ).read_text(encoding="utf-8")
         )
-        status = json.loads((run_directory / "status.json").read_text(encoding="utf-8"))
+        status = json.loads((session_directory / "status.json").read_text(encoding="utf-8"))
         self.assertEqual(execution["status"], "failed")
         self.assertIn("decision:", execution["error"])
         self.assertEqual(status["status"], "active")
-        self.assertFalse((run_directory / "outputs").exists())
+        self.assertFalse((session_directory / "outputs").exists())
 
 
 if __name__ == "__main__":

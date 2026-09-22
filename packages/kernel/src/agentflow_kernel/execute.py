@@ -24,7 +24,7 @@ from .selection import (
     next_stage,
 )
 from .prompt import build_stage_prompt
-from .run_records import bind_prior_run_id, create_workflow_run, resolve_prior_run_id
+from .session_records import bind_prior_session_id, create_workflow_session, resolve_prior_session_id
 from .runtime import log
 from .session_store import SessionStore
 from .workflow import WorkflowDocument
@@ -34,9 +34,9 @@ from .workflow import WorkflowDocument
 class ExecuteRequest:
     workflow_id: Optional[str] = None
     task: Optional[str] = None
-    run_id: Optional[str] = None
+    session_id: Optional[str] = None
     stage_id: Optional[str] = None
-    prior_run_id: Optional[str] = None
+    prior_session_id: Optional[str] = None
     max_attempts: Optional[int] = 3
     once: bool = False
 
@@ -48,7 +48,7 @@ _EXECUTE_EXIT_CODES = {
     "retry_exhausted": 3,
     "stage": 0,
 }
-_TERMINAL_RUN_STATUSES = frozenset({"completed", "blocked", "cancelled"})
+_TERMINAL_SESSION_STATUSES = frozenset({"completed", "blocked", "cancelled"})
 
 
 def execute_named_workflow(
@@ -63,33 +63,33 @@ def execute_named_workflow(
     if not once and (max_attempts is None or max_attempts < 1):
         raise ConfigurationError("--attempts must be at least 1.")
     store = SessionStore(workspace)
-    run_id = request.run_id
+    session_id = request.session_id
     workflow: Optional[WorkflowDocument] = None
-    if run_id:
+    if session_id:
         workflow_id, status = _bind_execute_run(
-            workspace, run_id, request.workflow_id, request.prior_run_id
+            workspace, session_id, request.workflow_id, request.prior_session_id
         )
-        run_status = str(status.get("status") or "")
-        if run_status in _TERMINAL_RUN_STATUSES:
-            _print_execute_final(status, run_status, [])
-            return _EXECUTE_EXIT_CODES[run_status]
+        session_status = str(status.get("status") or "")
+        if session_status in _TERMINAL_SESSION_STATUSES:
+            _print_execute_final(status, session_status, [])
+            return _EXECUTE_EXIT_CODES[session_status]
     else:
         if not request.workflow_id:
-            raise ConfigurationError("Creating a run requires a workflow.")
+            raise ConfigurationError("Creating a session requires a workflow.")
         if not request.task:
-            raise ConfigurationError("Creating a run requires --task.")
+            raise ConfigurationError("Creating a session requires --task.")
         workflow_id = request.workflow_id
         workflow = load_named_workflow(workspace, workflow_id)
-        resolve_prior_run_id(workspace, workflow, request.prior_run_id)
+        resolve_prior_session_id(workspace, workflow, request.prior_session_id)
         if stage_id is not None:
             _require_eligible_stage(workflow, [], "active", stage_id)
-        run_id = create_workflow_run(
+        session_id = create_workflow_session(
             workspace,
             workflow_id,
             request.task,
-            prior_run_id=request.prior_run_id,
+            prior_session_id=request.prior_session_id,
         )
-        print(f"[agentflow] run_id: {run_id}", file=sys.stderr, flush=True)
+        print(f"[agentflow] session_id: {session_id}", file=sys.stderr, flush=True)
     if workflow is None:
         workflow = load_named_workflow(workspace, workflow_id)
     previous_handlers = {
@@ -103,7 +103,7 @@ def execute_named_workflow(
                 store,
                 workflow,
                 workflow_id,
-                run_id,
+                session_id,
                 stage_id,
                 runner or AgentToolRunner(),
             )
@@ -112,13 +112,13 @@ def execute_named_workflow(
             store,
             workflow,
             workflow_id,
-            run_id,
+            session_id,
             max_attempts,
             runner or AgentToolRunner(),
         )
     except CancellationRequested as exc:
         log(str(exc))
-        status = store.read_run_status(run_id)
+        status = store.read_session_status(session_id)
         _print_execute_final(status, "cancelled", [])
         return 130
     except ConfigurationError:
@@ -134,12 +134,12 @@ def execute_named_workflow(
 def _require_eligible_stage(
     workflow: WorkflowDocument,
     snapshots: Sequence[Any],
-    run_status: str,
+    session_status: str,
     stage_id: str,
 ) -> str:
-    selected = _selected_stage(workflow, snapshots, run_status)
+    selected = _selected_stage(workflow, snapshots, session_status)
     if isinstance(selected, Stop):
-        raise ConfigurationError(f"Run is {selected.reason}.")
+        raise ConfigurationError(f"Session is {selected.reason}.")
     if selected.stage_id != stage_id:
         raise ConfigurationError(
             f"Stage {stage_id} is not the eligible stage {selected.stage_id}."
@@ -150,9 +150,9 @@ def _require_eligible_stage(
 def _selected_stage(
     workflow: WorkflowDocument,
     snapshots: Sequence[Any],
-    run_status: str,
+    session_status: str,
 ) -> Any:
-    selected = next_stage(workflow, snapshots, run_status)
+    selected = next_stage(workflow, snapshots, session_status)
     if isinstance(selected, NextStageError):
         raise ConfigurationError(selected.message)
     if isinstance(selected, (NextStage, Stop)):
@@ -165,18 +165,18 @@ def _run_execute_once(
     store: SessionStore,
     workflow: WorkflowDocument,
     workflow_id: str,
-    run_id: str,
+    session_id: str,
     stage_id: Optional[str],
     runner: Optional[AgentToolRunner],
 ) -> int:
-    store.reap_orphaned_executions(run_id, on_live_owner="raise")
-    snapshots = store.execution_snapshots(run_id)
-    status = store.read_run_status(run_id)
-    run_status = str(status.get("status") or "")
-    if run_status in _TERMINAL_RUN_STATUSES:
-        _print_execute_final(status, run_status, [])
-        return _EXECUTE_EXIT_CODES[run_status]
-    selected = _selected_stage(workflow, snapshots, run_status)
+    store.reap_orphaned_executions(session_id, on_live_owner="raise")
+    snapshots = store.execution_snapshots(session_id)
+    status = store.read_session_status(session_id)
+    session_status = str(status.get("status") or "")
+    if session_status in _TERMINAL_SESSION_STATUSES:
+        _print_execute_final(status, session_status, [])
+        return _EXECUTE_EXIT_CODES[session_status]
+    selected = _selected_stage(workflow, snapshots, session_status)
     if isinstance(selected, Stop):
         _print_execute_final(status, selected.reason, [])
         return _EXECUTE_EXIT_CODES.get(selected.reason, 2)
@@ -184,20 +184,20 @@ def _run_execute_once(
         raise ConfigurationError(
             f"Stage {stage_id} is not the eligible stage {selected.stage_id}."
         )
-    assert_stage_dispatchable(workspace, workflow, run_id, selected.stage_id)
+    assert_stage_dispatchable(workspace, workflow, session_id, selected.stage_id)
     stage = _dispatch_execute_stage(
         workspace,
         workflow,
         workflow_id,
-        run_id,
+        session_id,
         selected.stage_id,
         status,
         snapshots,
         runner,
     )
-    status = store.read_run_status(run_id)
-    run_status = str(status.get("status") or "")
-    stop_reason = run_status if run_status in _TERMINAL_RUN_STATUSES else "stage"
+    status = store.read_session_status(session_id)
+    session_status = str(status.get("status") or "")
+    stop_reason = session_status if session_status in _TERMINAL_SESSION_STATUSES else "stage"
     _print_execute_final(status, stop_reason, [stage])
     if stop_reason == "stage" and stage.get("outcome_status") != "complete":
         return 1
@@ -209,15 +209,15 @@ def _run_execute_loop(
     store: SessionStore,
     workflow: WorkflowDocument,
     workflow_id: str,
-    run_id: str,
+    session_id: str,
     max_attempts: Optional[int],
     runner: Optional[AgentToolRunner],
 ) -> int:
     stages: list[dict[str, Any]] = []
     while True:
-        store.reap_orphaned_executions(run_id, on_live_owner="raise")
-        snapshots = store.execution_snapshots(run_id)
-        status = store.read_run_status(run_id)
+        store.reap_orphaned_executions(session_id, on_live_owner="raise")
+        snapshots = store.execution_snapshots(session_id)
+        status = store.read_session_status(session_id)
         selected = _selected_stage(
             workflow, snapshots, str(status.get("status") or "")
         )
@@ -232,7 +232,7 @@ def _run_execute_loop(
                 workspace,
                 workflow,
                 workflow_id,
-                run_id,
+                session_id,
                 selected.stage_id,
                 status,
                 snapshots,
@@ -245,7 +245,7 @@ def _dispatch_execute_stage(
     workspace: Path,
     workflow: WorkflowDocument,
     workflow_id: str,
-    run_id: str,
+    session_id: str,
     stage_id: str,
     status: Dict[str, Any],
     snapshots: Sequence[Any],
@@ -259,15 +259,15 @@ def _dispatch_execute_stage(
         file=sys.stderr,
         flush=True,
     )
-    prior_run_id = _stored_prior_run_id(status)
+    prior_session_id = _stored_prior_session_id(status)
     prompt = build_stage_prompt(
         workflow=workflow,
         stage_id=stage_id,
         task=str(status.get("task") or ""),
         snapshots=snapshots,
         workspace=workspace,
-        prior_run_id=prior_run_id,
-        prior_outputs=_prior_run_outputs(workspace, prior_run_id),
+        prior_session_id=prior_session_id,
+        prior_outputs=_prior_session_outputs(workspace, prior_session_id),
     )
     result = dispatch_named_stage(
         workspace,
@@ -275,7 +275,7 @@ def _dispatch_execute_stage(
             workflow_id=workflow_id,
             stage_id=stage_id,
             prompt=prompt,
-            run_id=run_id,
+            session_id=session_id,
         ),
         runner=runner,
     )
@@ -284,35 +284,35 @@ def _dispatch_execute_stage(
 
 def _bind_execute_run(
     workspace: Path,
-    run_id: str,
+    session_id: str,
     workflow_id: Optional[str],
-    prior_run_id: Optional[str],
+    prior_session_id: Optional[str],
 ) -> tuple[str, Dict[str, Any]]:
-    status = SessionStore(workspace).read_run_status(run_id)
+    status = SessionStore(workspace).read_session_status(session_id)
     stored_workflow = status.get("workflow_id")
     if not status or not isinstance(stored_workflow, str) or not stored_workflow:
-        raise ConfigurationError(f"Run not found: {run_id}.")
+        raise ConfigurationError(f"Session not found: {session_id}.")
     if stored_workflow == "agent":
-        raise ConfigurationError(f"Run {run_id} is not a named workflow run.")
+        raise ConfigurationError(f"Session {session_id} is not a named workflow session.")
     if workflow_id and workflow_id != stored_workflow:
         raise ConfigurationError(
-            f"Workflow {workflow_id} does not match run {stored_workflow}."
+            f"Workflow {workflow_id} does not match session {stored_workflow}."
         )
-    bind_prior_run_id(workspace, run_id, prior_run_id)
+    bind_prior_session_id(workspace, session_id, prior_session_id)
     return stored_workflow, status
 
 
-def _stored_prior_run_id(status: Dict[str, Any]) -> Optional[str]:
-    prior_run_id = status.get("prior_run_id")
-    return prior_run_id if isinstance(prior_run_id, str) and prior_run_id else None
+def _stored_prior_session_id(status: Dict[str, Any]) -> Optional[str]:
+    prior_session_id = status.get("prior_session_id")
+    return prior_session_id if isinstance(prior_session_id, str) and prior_session_id else None
 
 
-def _prior_run_outputs(
-    workspace: Path, prior_run_id: Optional[str]
+def _prior_session_outputs(
+    workspace: Path, prior_session_id: Optional[str]
 ) -> Optional[Dict[str, Any]]:
-    if not prior_run_id:
+    if not prior_session_id:
         return None
-    outputs = SessionStore(workspace).read_run_status(prior_run_id).get("outputs")
+    outputs = SessionStore(workspace).read_session_status(prior_session_id).get("outputs")
     return outputs if isinstance(outputs, dict) else {}
 
 
@@ -323,8 +323,8 @@ def _print_execute_final(
     print(
         json.dumps(
             {
-                "run_id": status.get("run_id") or "",
-                "run_status": status.get("status") or "",
+                "session_id": status.get("session_id") or "",
+                "session_status": status.get("status") or "",
                 "stop_reason": stop_reason,
                 "outputs": outputs,
                 "stages": stages,

@@ -29,7 +29,7 @@ watch_app = typer.Typer(
 
 @watch_app.callback(invoke_without_command=True)
 def watch_command(
-    run: Annotated[str, typer.Argument(metavar="RUN", help="Run to follow.")],
+    session: Annotated[str, typer.Argument(metavar="SESSION", help="Session to follow.")],
     execution: Annotated[
         Optional[str],
         typer.Option(
@@ -73,7 +73,7 @@ def watch_command(
         ),
     ] = False,
 ) -> None:
-    """Follow events for a run.
+    """Follow events for a session.
 
     With no --cursor, print the snapshot, then follow events appended after it.
     --cursor replays events.jsonl from that byte. 0 replays the whole log.
@@ -84,9 +84,9 @@ def watch_command(
     While following, --json prints one JSON object per event.
     """
     raise typer.Exit(
-        watch_run(
+        watch_session(
             find_workspace(invocation_cwd()),
-            run,
+            session,
             once=once,
             execution_id=execution,
             until_terminal=until,
@@ -96,9 +96,9 @@ def watch_command(
     )
 
 
-def watch_run(
+def watch_session(
     workspace: Path,
-    run_id: str,
+    session_id: str,
     *,
     once: bool = False,
     execution_id: Optional[str] = None,
@@ -114,24 +114,24 @@ def watch_run(
         raise ConfigurationError("--until requires --execution.")
     if cursor is not None and cursor < 0:
         raise ConfigurationError("--cursor must be >= 0.")
-    run_directory = workspace / ".agentflow" / "runs" / run_id
-    events_path = run_directory / "events.jsonl"
+    session_directory = workspace / ".agentflow" / "sessions" / session_id
+    events_path = session_directory / "events.jsonl"
     if not events_path.is_file():
-        raise ConfigurationError(f"No events found for run: {run_id}")
-    SessionStore(workspace).reap_orphaned_executions(run_id, on_live_owner="ignore")
+        raise ConfigurationError(f"No events found for session: {session_id}")
+    SessionStore(workspace).reap_orphaned_executions(session_id, on_live_owner="ignore")
     execution_path: Optional[Path] = None
     if execution_id is not None:
-        execution_path = run_directory / "executions" / execution_id / "execution.json"
+        execution_path = session_directory / "executions" / execution_id / "execution.json"
         if not execution_path.is_file():
             raise ConfigurationError(f"No execution found: {execution_id}")
     if once:
-        _print_watch_snapshot(run_directory, execution_id, json_lines)
+        _print_watch_snapshot(session_directory, execution_id, json_lines)
         return 0
     follow_cursor = cursor
     if follow_cursor is None:
-        snapshot = _print_watch_snapshot(run_directory, execution_id, json_lines)
+        snapshot = _print_watch_snapshot(session_directory, execution_id, json_lines)
         follow_cursor = int(snapshot.get("events_cursor") or 0)
-    print_notice(f"Watching run {run_id}.")
+    print_notice(f"Watching session {session_id}.")
     previous_handlers = {
         signal.SIGINT: signal.signal(signal.SIGINT, raise_cancellation),
         signal.SIGTERM: signal.signal(signal.SIGTERM, raise_cancellation),
@@ -222,9 +222,9 @@ def _emit_watch_event(
 
 
 def _print_watch_snapshot(
-    run_directory: Path, execution_id: Optional[str], json_lines: bool
+    session_directory: Path, execution_id: Optional[str], json_lines: bool
 ) -> dict[str, Any]:
-    snapshot = watch_snapshot(run_directory, execution_id=execution_id)
+    snapshot = watch_snapshot(session_directory, execution_id=execution_id)
     if json_lines:
         print(json.dumps(snapshot, ensure_ascii=False), flush=True)
     else:

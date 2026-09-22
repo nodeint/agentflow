@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec, NewSession
+from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec
 from agentflow_kernel.provider_events import classify_provider_error, provider_error_message
 
 
@@ -13,19 +13,13 @@ class GrokAdapter(BaseCLIAdapter):
     def __init__(self) -> None:
         self._tool_calls: Dict[str, Dict[str, Any]] = {}
 
-    def create_new_session(self, runner_session_id: str) -> NewSession:
-        return NewSession(
-            provider_session_id=runner_session_id,
-            provider_session_source="caller-assigned via --session-id",
-        )
-
     def build_command(
         self,
         model: str,
         workspace: str,
         prompt: str,
-        provider_session_id: Optional[str],
-        new_provider_session_id: Optional[str],
+        agent_id: Optional[str],
+        new_agent_id: Optional[str],
         prompt_file: Path,
         last_message_file: Path,
         thinking: Optional[str] = None,
@@ -45,10 +39,10 @@ class GrokAdapter(BaseCLIAdapter):
             "--always-approve",
             "--verbatim",
         ]
-        if provider_session_id:
-            cmd.extend(["--resume", provider_session_id])
-        elif new_provider_session_id:
-            cmd.extend(["--session-id", new_provider_session_id])
+        if agent_id:
+            cmd.extend(["--resume", agent_id])
+        elif new_agent_id:
+            cmd.extend(["--session-id", new_agent_id])
         if thinking:
             cmd.extend(["--reasoning-effort", thinking])
         return CommandSpec(argv=cmd)
@@ -58,7 +52,7 @@ class GrokAdapter(BaseCLIAdapter):
     ) -> Tuple[str, Optional[str]]:
         del last_message_file
         segments: list[list[str]] = [[]]
-        provider_session_id = None
+        agent_id = None
         error_message = None
         saw_event = False
         for raw_line in stdout.splitlines():
@@ -80,18 +74,18 @@ class GrokAdapter(BaseCLIAdapter):
             elif event_type == "end":
                 session_id = payload.get("sessionId")
                 if isinstance(session_id, str) and session_id:
-                    provider_session_id = session_id
+                    agent_id = session_id
             elif event_type == "error":
                 message = payload.get("message")
                 if isinstance(message, str) and message:
                     error_message = message
         text = _text_with_status_header(segments)
         if text:
-            return text, provider_session_id
+            return text, agent_id
         if error_message:
-            return error_message, provider_session_id
+            return error_message, agent_id
         if saw_event:
-            return "", provider_session_id
+            return "", agent_id
         return stdout.strip(), None
 
     def parse_progress_event(self, line: str) -> Optional[Dict[str, Any]]:

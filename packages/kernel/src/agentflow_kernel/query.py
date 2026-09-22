@@ -30,10 +30,10 @@ def read_execution_file(path: Path) -> Optional[dict[str, Any]]:
 
 
 def watch_snapshot(
-    run_directory: Path, execution_id: Optional[str] = None
+    session_directory: Path, execution_id: Optional[str] = None
 ) -> dict[str, Any]:
-    status = read_status_file(run_directory / "status.json")
-    events_path = run_directory / "events.jsonl"
+    status = read_status_file(session_directory / "status.json")
+    events_path = session_directory / "events.jsonl"
     try:
         cursor = events_path.stat().st_size
     except OSError:
@@ -42,14 +42,14 @@ def watch_snapshot(
     execution = None
     if isinstance(selected_id, str) and selected_id:
         execution = read_execution_file(
-            run_directory / "executions" / selected_id / "execution.json"
+            session_directory / "executions" / selected_id / "execution.json"
         )
     outcome = None
     if isinstance(execution, dict) and isinstance(execution.get("outcome"), dict):
         outcome = execution["outcome"]
     outputs = status.get("outputs") if isinstance(status.get("outputs"), dict) else {}
     return {
-        "run_id": status.get("run_id") or run_directory.name,
+        "session_id": status.get("session_id") or session_directory.name,
         "status": status.get("status") or "unknown",
         "workflow_id": status.get("workflow_id"),
         "task": status.get("task"),
@@ -64,14 +64,14 @@ def watch_snapshot(
     }
 
 
-def list_run_rows(workspace: Path) -> list[tuple[str, str, str, str, str, str, str, str]]:
-    runs_directory = workspace / ".agentflow" / "runs"
-    if not runs_directory.exists():
+def list_session_rows(workspace: Path) -> list[tuple[str, str, str, str, str, str, str, str]]:
+    sessions_directory = workspace / ".agentflow" / "sessions"
+    if not sessions_directory.exists():
         return []
     rows: list[tuple[str, str, str, str, str, str, str, str]] = []
-    for run_directory in runs_directory.iterdir():
-        status_path = run_directory / "status.json"
-        if not run_directory.is_dir() or not status_path.is_file():
+    for session_directory in sessions_directory.iterdir():
+        status_path = session_directory / "status.json"
+        if not session_directory.is_dir() or not status_path.is_file():
             continue
         status = read_status_file(status_path)
         if not status:
@@ -85,7 +85,7 @@ def list_run_rows(workspace: Path) -> list[tuple[str, str, str, str, str, str, s
         rows.append(
             (
                 str(status.get("updated_at", "")),
-                run_directory.name,
+                session_directory.name,
                 str(status.get("workflow_id", "legacy/unknown")),
                 str(status.get("status", "unknown")),
                 str(status.get("latest_execution_id", "not started")),

@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 from agentflow_kernel.config import ConfigurationError
-from agentflow_kernel.dispatch import resolve_resume_session
+from agentflow_kernel.dispatch import resolve_resume_execution
 from agentflow_kernel.selection import (
     Error,
     NextStage,
@@ -20,7 +20,7 @@ from agentflow_kernel.selection import (
     next_stage,
     stage_dispatch_error,
 )
-from agentflow_kernel.run_records import require_agent_run, resolve_prior_run_id
+from agentflow_kernel.session_records import require_agent_session, resolve_prior_session_id
 from agentflow_kernel.outputs import ExecutionSnapshot
 from agentflow_kernel.workflow import (
     StageSpec,
@@ -58,7 +58,6 @@ def _snapshot(
     order: int,
     *,
     decision: str | None = None,
-    session: str | None = "sess-1",
     status: str = "completed",
     outcome_status: str | None = "complete",
 ) -> ExecutionSnapshot:
@@ -70,7 +69,6 @@ def _snapshot(
         outcome_status=outcome_status,
         artifact_directory=Path("/tmp"),
         outcome_decision=decision,
-        runner_session_id=session,
     )
 
 
@@ -112,17 +110,17 @@ class DispatchGateTests(unittest.TestCase):
 
 
 class PriorRunTests(unittest.TestCase):
-    def test_requires_a_completed_matching_prior_run(self) -> None:
+    def test_requires_a_completed_matching_prior_session(self) -> None:
         workflow = _workflow()
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             with self.assertRaisesRegex(ConfigurationError, "pass --prior"):
-                resolve_prior_run_id(workspace, workflow, None)
-            with self.assertRaisesRegex(ConfigurationError, "Required run not found"):
-                resolve_prior_run_id(workspace, workflow, "missing")
-            run_directory = workspace / ".agentflow" / "runs" / "prior"
-            run_directory.mkdir(parents=True)
-            (run_directory / "status.json").write_text(
+                resolve_prior_session_id(workspace, workflow, None)
+            with self.assertRaisesRegex(ConfigurationError, "Required session not found"):
+                resolve_prior_session_id(workspace, workflow, "missing")
+            session_directory = workspace / ".agentflow" / "sessions" / "prior"
+            session_directory.mkdir(parents=True)
+            (session_directory / "status.json").write_text(
                 json.dumps(
                     {
                         "workflow_id": "plan-review",
@@ -133,8 +131,8 @@ class PriorRunTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ConfigurationError, "decision is 'revise'"):
-                resolve_prior_run_id(workspace, workflow, "prior")
-            (run_directory / "status.json").write_text(
+                resolve_prior_session_id(workspace, workflow, "prior")
+            (session_directory / "status.json").write_text(
                 json.dumps(
                     {
                         "workflow_id": "plan-review",
@@ -145,7 +143,7 @@ class PriorRunTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(
-                resolve_prior_run_id(workspace, workflow, "prior"), "prior"
+                resolve_prior_session_id(workspace, workflow, "prior"), "prior"
             )
 
 
@@ -156,7 +154,7 @@ class ResumeSessionTests(unittest.TestCase):
             execution = (
                 workspace
                 / ".agentflow"
-                / "runs"
+                / "sessions"
                 / "run-1"
                 / "executions"
                 / "0001-implement--attempt-01"
@@ -170,34 +168,29 @@ class ResumeSessionTests(unittest.TestCase):
                         "execution_order": 1,
                         "status": "completed",
                         "outcome": {"status": "complete"},
-                        "runner_session_id": "sess-implement",
                     }
                 ),
                 encoding="utf-8",
             )
             self.assertEqual(
-                resolve_resume_session(
-                    workspace, _workflow(), "run-1", "write-tests", None
+                resolve_resume_execution(
+                    workspace, _workflow(), "run-1", "write-tests"
                 ),
-                "sess-implement",
+                "0001-implement--attempt-01",
             )
-            with self.assertRaisesRegex(ConfigurationError, "does not match"):
-                resolve_resume_session(
-                    workspace, _workflow(), "run-1", "write-tests", "other"
-                )
 
 
 class AgentRunGuardTests(unittest.TestCase):
-    def test_rejects_a_named_workflow_run_as_an_agent_run(self) -> None:
+    def test_rejects_a_named_workflow_session_as_an_agent_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
-            run_directory = workspace / ".agentflow" / "runs" / "wf"
-            run_directory.mkdir(parents=True)
-            (run_directory / "status.json").write_text(
+            session_directory = workspace / ".agentflow" / "sessions" / "wf"
+            session_directory.mkdir(parents=True)
+            (session_directory / "status.json").write_text(
                 json.dumps({"workflow_id": "plan-review"}), encoding="utf-8"
             )
-            with self.assertRaisesRegex(ConfigurationError, "is not an agent run"):
-                require_agent_run(workspace, "wf")
+            with self.assertRaisesRegex(ConfigurationError, "was not created by agent"):
+                require_agent_session(workspace, "wf")
 
 
 class NextStageTests(unittest.TestCase):
@@ -235,7 +228,7 @@ class NextStageTests(unittest.TestCase):
                 Stop("completed"),
             ),
             (
-                "completed run",
+                "completed session",
                 [
                     _snapshot("plan", 1),
                     _snapshot("review-plan", 2, decision="approved"),
@@ -244,10 +237,10 @@ class NextStageTests(unittest.TestCase):
                 Stop("completed"),
             ),
         )
-        for name, snapshots, run_status, expected in cases:
+        for name, snapshots, session_status, expected in cases:
             with self.subTest(name):
                 self.assertEqual(
-                    next_stage(workflow, snapshots, run_status), expected
+                    next_stage(workflow, snapshots, session_status), expected
                 )
 
     def test_plan_implement_walk(self) -> None:
@@ -287,10 +280,10 @@ class NextStageTests(unittest.TestCase):
                 Stop("completed"),
             ),
         )
-        for name, snapshots, run_status, expected in cases:
+        for name, snapshots, session_status, expected in cases:
             with self.subTest(name):
                 self.assertEqual(
-                    next_stage(workflow, snapshots, run_status), expected
+                    next_stage(workflow, snapshots, session_status), expected
                 )
 
     def test_failed_latest_retries_that_stage(self) -> None:
@@ -312,7 +305,7 @@ class NextStageTests(unittest.TestCase):
             NextStage("review-plan"),
         )
 
-    def test_terminal_run_status_wins_over_failed_snapshot(self) -> None:
+    def test_terminal_session_status_wins_over_failed_snapshot(self) -> None:
         workflow = _repo_workflow("plan-implement")
         failed = [
             _snapshot(

@@ -10,7 +10,7 @@ import typer
 from agentflow_kernel.agent_runner import AgentToolRunner
 from agentflow_kernel.command_executor import CancellationRequested, raise_cancellation
 from agentflow_kernel.config import ConfigurationError, resolve_role_target
-from agentflow_kernel.run_records import create_agent_run, require_agent_run
+from agentflow_kernel.session_records import create_agent_session, require_agent_session
 from agentflow_kernel.runtime import log
 from agentflow_kernel.session_store import SessionStore
 
@@ -40,14 +40,14 @@ _JSON_HELP = "Print the result as one JSON object."
 def agent_callback() -> None:
     """Run one role outside a workflow.
 
-    start creates a run and dispatches one turn. continue appends a turn.
+    start creates a session and dispatches one turn. continue appends a turn.
     The role must exist under roles in .agentflow/config.yaml.
     Pass one of --prompt, --file, or --stdin.
     Pass --provider and --model together, or omit both.
     --task is only on start and defaults to the role key.
-    --session is only on continue. It continues that runner session on RUN.
+    continue resumes the agent id of the latest execution.
 
-    Without --json, stdout is role, model, outcome, run, and execution.
+    Without --json, stdout is role, model, outcome, session, and execution.
     With --json, stdout is one result object. Notices are on stderr.
 
     Exit 0 when outcome_status is complete.
@@ -65,7 +65,7 @@ def agent_start(
         typer.Option(
             "--task",
             metavar="TASK",
-            help="Label stored on the new run. Defaults to the role key.",
+            help="Label stored on the new session. Defaults to the role key.",
         ),
     ] = None,
     provider: Annotated[
@@ -91,7 +91,7 @@ def agent_start(
     prompt_stdin: Annotated[bool, typer.Option("--stdin", help=_STDIN_HELP)] = False,
     as_json: Annotated[bool, typer.Option("--json", help=_JSON_HELP)] = False,
 ) -> None:
-    """Create an agent run and dispatch one turn.
+    """Create a session and dispatch one turn.
 
     Pass one of --prompt, --file, or --stdin.
     """
@@ -99,11 +99,10 @@ def agent_start(
         _run_agent(
             role=role,
             task=task,
-            run_id=None,
+            session_id=None,
             provider=provider,
             model=model,
             thinking=thinking,
-            runner_session_id=None,
             prompt=prompt,
             prompt_file=prompt_file,
             prompt_stdin=prompt_stdin,
@@ -114,7 +113,7 @@ def agent_start(
 
 @agent_app.command("continue")
 def agent_continue(
-    run: Annotated[str, typer.Argument(metavar="RUN", help="Agent run to continue.")],
+    session: Annotated[str, typer.Argument(metavar="SESSION", help="Session to continue.")],
     role: Annotated[str, typer.Option("--role", metavar="ROLE", help=_ROLE_HELP)],
     provider: Annotated[
         Optional[str],
@@ -128,15 +127,6 @@ def agent_continue(
         Optional[str],
         typer.Option("--thinking", help=_THINKING_HELP, show_default=False),
     ] = None,
-    session: Annotated[
-        Optional[str],
-        typer.Option(
-            "--session",
-            metavar="ID",
-            help="Runner session to continue on this run.",
-            show_default=False,
-        ),
-    ] = None,
     prompt: Annotated[
         Optional[str],
         typer.Option("--prompt", help=_PROMPT_HELP, show_default=False),
@@ -148,20 +138,19 @@ def agent_continue(
     prompt_stdin: Annotated[bool, typer.Option("--stdin", help=_STDIN_HELP)] = False,
     as_json: Annotated[bool, typer.Option("--json", help=_JSON_HELP)] = False,
 ) -> None:
-    """Append a turn to an agent run.
+    """Append a turn to a session.
 
     Pass one of --prompt, --file, or --stdin.
-    --session continues a runner session that already belongs to RUN.
+    The turn resumes the agent id of the latest execution.
     """
     raise typer.Exit(
         _run_agent(
             role=role,
             task=None,
-            run_id=run,
+            session_id=session,
             provider=provider,
             model=model,
             thinking=thinking,
-            runner_session_id=session,
             prompt=prompt,
             prompt_file=prompt_file,
             prompt_stdin=prompt_stdin,
@@ -174,11 +163,10 @@ def _run_agent(
     *,
     role: str,
     task: Optional[str],
-    run_id: Optional[str],
+    session_id: Optional[str],
     provider: Optional[str],
     model: Optional[str],
     thinking: Optional[str],
-    runner_session_id: Optional[str],
     prompt: Optional[str],
     prompt_file: Optional[str],
     prompt_stdin: bool,
@@ -193,11 +181,10 @@ def _run_agent(
         find_workspace(invocation_cwd()),
         role=role,
         task=task,
-        run_id=run_id,
+        session_id=session_id,
         provider=provider,
         model=model,
         thinking=thinking,
-        runner_session_id=runner_session_id,
         prompt=prompt,
         prompt_file=prompt_file,
         prompt_stdin=prompt_stdin,
@@ -210,11 +197,10 @@ def dispatch_agent(
     *,
     role: str,
     task: Optional[str],
-    run_id: Optional[str],
+    session_id: Optional[str],
     provider: Optional[str],
     model: Optional[str],
     thinking: Optional[str],
-    runner_session_id: Optional[str],
     prompt: Optional[str],
     prompt_file: Optional[str],
     prompt_stdin: bool,
@@ -228,13 +214,17 @@ def dispatch_agent(
         model=model,
         thinking=thinking,
     )
-    resolved_run_id, created_run = _resolve_agent_run_id(
+    resolved_session_id, created_session = _resolve_session_id(
         workspace,
-        run_id=run_id,
-        runner_session_id=runner_session_id,
+        session_id=session_id,
         role=role,
         task=task,
     )
+    resume_execution_id = None
+    if not created_session:
+        previous = SessionStore(workspace).latest_execution(resolved_session_id)
+        if previous is not None:
+            resume_execution_id = previous.execution_id
     thinking_label = target.thinking or "default"
     print_notice(
         f"agent {role} · {target.provider}/{target.model} "
@@ -255,8 +245,8 @@ def dispatch_agent(
                 prompt_stdin=prompt_stdin,
             ),
             workspace=str(workspace),
-            runner_session_id=runner_session_id,
-            run_id=resolved_run_id,
+            session_id=resolved_session_id,
+            resume_execution_id=resume_execution_id,
             stage_id=role,
         )
     except CancellationRequested as exc:
@@ -268,8 +258,8 @@ def dispatch_agent(
     finally:
         for signal_number, previous_handler in previous_handlers.items():
             signal.signal(signal_number, previous_handler)
-    if created_run:
-        print_notice(f"run_id: {result['run_id']}")
+    if created_session:
+        print_notice(f"session_id: {result['session_id']}")
     if as_json:
         print(json.dumps(result, ensure_ascii=False))
     else:
@@ -279,25 +269,16 @@ def dispatch_agent(
     return 0
 
 
-def _resolve_agent_run_id(
+def _resolve_session_id(
     workspace: Path,
-    run_id: Optional[str],
-    runner_session_id: Optional[str],
+    session_id: Optional[str],
     role: str,
     task: Optional[str],
 ) -> tuple[str, bool]:
-    if runner_session_id and not run_id:
-        raise ConfigurationError("--session requires a run.")
-    if run_id is not None and isinstance(task, str) and task.strip():
-        raise ConfigurationError("--task cannot be combined with a run.")
-    if run_id is not None and runner_session_id:
-        previous = SessionStore(workspace).latest_execution(runner_session_id)
-        if previous is not None and previous.run_id != run_id:
-            raise ConfigurationError(
-                f"Run {run_id} does not match runner session run {previous.run_id}."
-            )
-    if run_id is not None:
-        require_agent_run(workspace, run_id)
-        return run_id, False
+    if session_id is not None and isinstance(task, str) and task.strip():
+        raise ConfigurationError("--task cannot be combined with a session.")
+    if session_id is not None:
+        require_agent_session(workspace, session_id)
+        return session_id, False
     task_summary = (task if task is not None else role).strip()
-    return create_agent_run(workspace, role, task_summary), True
+    return create_agent_session(workspace, role, task_summary), True

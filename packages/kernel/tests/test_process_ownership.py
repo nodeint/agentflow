@@ -107,7 +107,7 @@ def _inspector(*, owner_alive: bool, provider_probe: str) -> FakeInspector:
 
 def _metadata(**extra: Any) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
-        "run_id": "run-1",
+        "session_id": "run-1",
         "execution_id": "0001-implement--attempt-01",
         "status": "running",
         "hostname": "host.example",

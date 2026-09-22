@@ -12,7 +12,7 @@ import tempfile
 from typing import Optional, Tuple
 
 from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec
-from agentflow_kernel.run_records import create_workflow_run
+from agentflow_kernel.session_records import create_workflow_session
 
 
 class FakeAdapter(BaseCLIAdapter):
@@ -24,8 +24,8 @@ class FakeAdapter(BaseCLIAdapter):
         model: str,
         workspace: str,
         prompt: str,
-        provider_session_id: Optional[str],
-        new_provider_session_id: Optional[str],
+        agent_id: Optional[str],
+        new_agent_id: Optional[str],
         prompt_file: Path,
         last_message_file: Path,
         thinking: Optional[str] = None,
@@ -35,8 +35,8 @@ class FakeAdapter(BaseCLIAdapter):
                 "model": model,
                 "workspace": workspace,
                 "prompt": prompt,
-                "provider_session_id": provider_session_id,
-                "new_provider_session_id": new_provider_session_id,
+                "agent_id": agent_id,
+                "new_agent_id": new_agent_id,
                 "prompt_file": prompt_file,
                 "thinking": thinking,
             }
@@ -205,12 +205,12 @@ stages:
 """
 
 
-def write_plan_review_run() -> tuple[Path, str]:
+def write_plan_review_session() -> tuple[Path, str]:
     workspace = Path(tempfile.mkdtemp())
     workflows = workspace / ".agentflow" / "workflows"
     workflows.mkdir(parents=True)
     (workflows / "plan-review.yaml").write_text(PLAN_REVIEW_WORKFLOW, encoding="utf-8")
-    return workspace, create_workflow_run(workspace, "plan-review", "Write a plan")
+    return workspace, create_workflow_session(workspace, "plan-review", "Write a plan")
 
 
 def write_config(contents: str) -> Path:

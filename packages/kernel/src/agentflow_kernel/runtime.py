@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Sequence
 
 AGENTFLOW_DIRNAME = ".agentflow"
 EXECUTIONS_DIRNAME = "executions"
-RUNS_DIRNAME = "runs"
+SESSIONS_DIRNAME = "sessions"
 SESSION_FILENAME = "session.json"
 EXECUTION_SCHEMA_VERSION = 1
 

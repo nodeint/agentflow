@@ -20,10 +20,9 @@ class ExecutionSnapshot:
     outcome_status: Optional[str]
     artifact_directory: Path
     outcome_decision: Optional[str] = None
-    runner_session_id: Optional[str] = None
 
 
-def run_status_after_execution(
+def session_status_after_execution(
     execution_status: str,
     outcome: Optional[StageOutcome],
     previous_status: Dict[str, Any],
@@ -54,17 +53,17 @@ def run_status_after_execution(
     return "active"
 
 
-def runnable_violation(run_id: str, status: Dict[str, Any]) -> Optional[str]:
-    run_status = status.get("status")
-    if run_status == "active":
+def runnable_violation(session_id: str, status: Dict[str, Any]) -> Optional[str]:
+    session_status = status.get("status")
+    if session_status == "active":
         return None
-    if run_status == "completed" and status.get("workflow_id") == "agent":
+    if session_status == "completed" and status.get("workflow_id") == "agent":
         return None
     terminal_by = status.get(
         "blocked_by_execution_id",
         status.get("terminal_execution_id", "an earlier execution"),
     )
-    return f"Run {run_id} is {run_status} at {terminal_by}; start a new run to continue."
+    return f"Session {session_id} is {session_status} at {terminal_by}; start a new session to continue."
 
 
 def is_completion_decision(
@@ -159,7 +158,7 @@ def nonempty_artifact(path: Path) -> bool:
 
 
 def publish_output_files(
-    run_directory: Path,
+    session_directory: Path,
     sources: Dict[str, Tuple[Path, str]],
     published_by_execution_id: str,
 ) -> Dict[str, Dict[str, str]]:
@@ -167,7 +166,7 @@ def publish_output_files(
     for name, (source_path, source_execution_id) in sources.items():
         if not nonempty_artifact(source_path):
             continue
-        destination = run_directory / "outputs" / name
+        destination = session_directory / "outputs" / name
         atomic_copy(source_path, destination)
         recorded[name] = {
             "path": f"outputs/{name}",

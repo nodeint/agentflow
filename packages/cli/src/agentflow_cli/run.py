@@ -15,8 +15,8 @@ from agentflow_kernel.config import (
 
 from .commands.agent import agent_app, dispatch_agent
 from .commands.execute import execute_app, execute_workflow
-from .commands.runs import list_runs, runs_app
-from .commands.watch import watch_app, watch_run
+from .commands.sessions import list_sessions, sessions_app
+from .commands.watch import watch_app, watch_session
 from .coordinator import build_coordinator_command
 from .display import print_error, print_notice
 from .workspace import (
@@ -32,7 +32,7 @@ app = typer.Typer(
     help=(
         "Run named workflows and standalone roles from .agentflow/.\n\n"
         "config.yaml declares models and roles. workflows/<id>.yaml is one "
-        "workflow. runs/ is local execution state. Commit config and workflows."
+        "workflow. sessions/ is local execution state. Commit config and workflows."
     ),
     add_completion=False,
     no_args_is_help=True,
@@ -68,7 +68,7 @@ def coordinator_command() -> None:
 
 
 app.add_typer(coordinator_app, name="coordinator")
-app.add_typer(runs_app, name="runs")
+app.add_typer(sessions_app, name="sessions")
 app.add_typer(execute_app, name="execute")
 app.add_typer(agent_app, name="agent")
 app.add_typer(watch_app, name="watch")
@@ -79,10 +79,10 @@ __all__ = [
     "dispatch_agent",
     "execute_workflow",
     "find_workspace",
-    "list_runs",
+    "list_sessions",
     "main",
     "resolve_prompt",
-    "watch_run",
+    "watch_session",
 ]
 
 

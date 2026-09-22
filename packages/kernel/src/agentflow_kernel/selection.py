@@ -6,7 +6,7 @@ from typing import Optional, Sequence, Union
 from .outputs import ExecutionSnapshot
 from .workflow import StageSpec, WorkflowDocument
 
-_TERMINAL_RUN_STATUSES = frozenset({"blocked", "cancelled", "completed"})
+_TERMINAL_SESSION_STATUSES = frozenset({"blocked", "cancelled", "completed"})
 
 
 @dataclass(frozen=True)
@@ -30,12 +30,12 @@ NextStageResult = Union[NextStage, Stop, Error]
 def next_stage(
     workflow: WorkflowDocument,
     snapshots: Sequence[ExecutionSnapshot],
-    run_status: str,
+    session_status: str,
 ) -> NextStageResult:
     if any(snapshot.status == "running" for snapshot in snapshots):
         return Error("an execution is still running")
-    if run_status in _TERMINAL_RUN_STATUSES:
-        return Stop(run_status)
+    if session_status in _TERMINAL_SESSION_STATUSES:
+        return Stop(session_status)
     latest = _latest_snapshot(snapshots)
     if latest is not None and latest.status == "failed":
         return NextStage(latest.stage_id)

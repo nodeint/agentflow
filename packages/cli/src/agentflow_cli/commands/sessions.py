@@ -6,12 +6,12 @@ from typing import Annotated
 
 import typer
 
-from agentflow_kernel.query import list_run_rows
+from agentflow_kernel.query import list_session_rows
 
-from ..display import print_runs
+from ..display import print_sessions
 from ..workspace import find_workspace, invocation_cwd
 
-runs_app = typer.Typer(
+sessions_app = typer.Typer(
     add_completion=False,
     invoke_without_command=True,
     subcommand_metavar="",
@@ -19,28 +19,28 @@ runs_app = typer.Typer(
 )
 
 
-@runs_app.callback(invoke_without_command=True)
-def runs_command(
+@sessions_app.callback(invoke_without_command=True)
+def sessions_command(
     as_json: Annotated[
         bool,
         typer.Option("--json", help="Print the same rows as a JSON array."),
     ] = False,
 ) -> None:
-    """List runs and their latest status.
+    """List sessions and their latest status.
 
-    Rows come from .agentflow/runs/, newest first.
-    Columns are run, workflow, status, latest execution, latest decision,
+    Rows come from .agentflow/sessions/, newest first.
+    Columns are session, workflow, status, latest execution, latest decision,
     published outputs, and task. --json prints those rows as a JSON array.
     """
-    raise typer.Exit(list_runs(find_workspace(invocation_cwd()), as_json=as_json))
+    raise typer.Exit(list_sessions(find_workspace(invocation_cwd()), as_json=as_json))
 
 
-def list_runs(workspace: Path, *, as_json: bool = False) -> int:
-    rows = list_run_rows(workspace)
+def list_sessions(workspace: Path, *, as_json: bool = False) -> int:
+    rows = list_session_rows(workspace)
     if as_json:
         payload = [
             {
-                "run": run_id,
+                "session": session_id,
                 "workflow": workflow_id,
                 "status": status,
                 "execution": execution_id,
@@ -48,9 +48,9 @@ def list_runs(workspace: Path, *, as_json: bool = False) -> int:
                 "outputs": outputs,
                 "task": task,
             }
-            for _, run_id, workflow_id, status, execution_id, decision, outputs, task in rows
+            for _, session_id, workflow_id, status, execution_id, decision, outputs, task in rows
         ]
         print(json.dumps(payload, ensure_ascii=False))
         return 0
-    print_runs(rows)
+    print_sessions(rows)
     return 0
