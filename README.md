@@ -1,35 +1,62 @@
 # Agentflow
 
-Agentflow runs repeatable, file-backed AI workflows from a project's own
-`.agentflow/` directory. Define the roles, models, stages, decisions, and
-artifacts once; Agentflow runs the next eligible stage and retains its local
-session history.
+**Compose AI coding agents into repeatable engineering workflows.**
 
-It currently supports the headless `codex` and `grok` CLIs.
+Use the right model for each stage of the job.
 
-## Install from this repository
+Agentflow connects coding-agent CLIs from different providers through explicit,
+repository-defined workflows. One model can plan, another can review, and the
+first can revise—while Agentflow carries artifacts between them and remembers
+where the process is.
 
-Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), and any provider
-CLI named in your configuration installed and authenticated.
+Agentflow currently supports the headless `codex` and `grok` CLIs.
+
+## Why Agentflow?
+
+Calling two agent CLIs from a shell script is easy. Reliably coordinating them
+across reviews, revisions, failures, and resumed sessions is not.
+
+Agentflow is built around three ideas:
+
+- **Use models for what they do best.** Assign each role to a provider and model
+  suited to the work, rather than asking one agent to do everything.
+- **Treat AI engineering process as code.** Keep stages, handoffs, review gates,
+  and revision policies in version control beside the project they govern.
+- **Keep orchestration explicit.** The team defines the process; models execute
+  roles inside it. A supervisor model does not invent or dynamically control
+  the workflow.
+
+**Models describe execution. Roles describe intent.** Changing the model behind
+a role does not require rewriting the workflow.
+
+**Common workflow model, native provider capabilities.** Agentflow coordinates
+the process, while each provider CLI remains responsible for authentication,
+agent execution, and its own tools and options.
+
+```mermaid
+flowchart LR
+    A[Task] --> B[Planner / Codex]
+    B -->|plan.md| C[Reviewer / Grok]
+    C -->|revise| B
+    C -->|approved| D[Complete]
+```
+
+## Quickstart
+
+Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), and authenticated
+provider CLIs named by your configuration.
+
+Until packaged releases are available, run Agentflow from a source checkout:
 
 ```bash
-git clone <repository-url>
-cd agentflow
 uv sync --all-packages
 uv run agentflow --help
 ```
 
-The workspace contains three packages:
+The examples below use `agentflow` for readability. When running from the
+checkout, use `uv run agentflow` instead.
 
-| Package | Purpose |
-| --- | --- |
-| `agentflow-kernel` | Workflow validation, scheduling, prompts, and session records. |
-| `agentflow-adapters` | Adapters for provider CLIs. |
-| `agentflow-cli` | The `agentflow` command. |
-
-## Add Agentflow to a project
-
-From the root of the project you want agents to work in, create this layout:
+In the project where agents will work, create two files:
 
 ```text
 .agentflow/
@@ -38,58 +65,53 @@ From the root of the project you want agents to work in, create this layout:
     └── plan-review.yaml
 ```
 
-`config.yaml` defines named models and roles. `options` holds parameters for
-that provider's CLI. Agentflow passes the map through; the adapter turns each
-entry into that CLI's own flags. Use values the installed CLI accepts.
+`.agentflow/config.yaml` assigns provider models to roles:
 
 ```yaml
 models:
-  implementation:
+  planner-model:
     provider: codex
     model: gpt-5
     options:
       thinking: medium
-      temperature: 0.2
-  review:
+
+  reviewer-model:
     provider: grok
     model: grok-4
     options:
       thinking: high
 
 roles:
-  developer:
-    default_model: implementation
+  planner:
+    default_model: planner-model
   reviewer:
-    default_model: review
+    default_model: reviewer-model
 ```
 
-Codex writes each option as `codex exec -c key=value`. `thinking` is sent as
-`model_reasoning_effort`. Grok writes each option as a long flag, with
-underscores turned into hyphens. `thinking` is sent as `--reasoning-effort`.
-A role or stage `thinking` value replaces `options.thinking` for that turn.
+Use model identifiers supported by your installed provider CLIs.
 
-A workflow is a directed graph of stages. A stage can produce a single named
-artifact; a decision routes to another stage or completes the workflow.
+`.agentflow/workflows/plan-review.yaml` defines the process:
 
 ```yaml
-# .agentflow/workflows/plan-review.yaml
 id: plan-review
 constraints:
   - Do not write implementation code.
 
 stages:
   - id: plan
-    role: developer
-    max_revisions: 3
+    role: planner
     depends_on: []
+    max_revisions: 3
     instructions:
-      - Write an implementation plan.
+      - Analyze the task and write an implementation plan.
     produces:
       artifact: plan.md
 
   - id: review-plan
     role: reviewer
     depends_on: [plan]
+    instructions:
+      - Review the plan for correctness, missing risks, and unnecessary scope.
     decision:
       values: [approved, revise]
       routes:
@@ -105,67 +127,79 @@ completion:
       artifact: plan.md
 ```
 
-Commit `config.yaml` and `workflows/`. Do not commit `.agentflow/sessions/`:
-it contains machine-local execution state, event logs, and generated artifacts.
-
-## Run a workflow
-
-Run commands from the configured project or any of its subdirectories.
+Run the workflow from that project or any of its subdirectories:
 
 ```bash
-# Create a session and run until it completes, blocks, or exhausts attempts.
 agentflow start plan-review --task "Plan the account settings redesign"
+```
 
-# Advance exactly one eligible stage. Useful for controlled orchestration.
-agentflow stage --workflow plan-review --task "Plan the account settings redesign"
+Agentflow runs the next eligible stage until the workflow completes or stops.
+Progress goes to stderr; stdout contains one JSON result with the session ID,
+status, stop reason, stage results, and published outputs.
 
-# Resume a session returned by an earlier command.
-agentflow continue <session-id>
+```json
+{
+  "session_id": "<session-id>",
+  "session_status": "completed",
+  "stop_reason": "completed",
+  "outputs": {
+    "plan": {}
+  },
+  "stages": {}
+}
+```
 
-# Inspect local session state or follow execution events.
+Inspect or resume the recorded session:
+
+```bash
 agentflow sessions
 agentflow watch <session-id>
+agentflow continue <session-id>
 ```
 
-`start` and `continue` allow three failed stage attempts by
-default; pass `--attempts N` to change that limit. They also stop after 20
-stage dispatches. Pass `--max-dispatches N` to change that ceiling, or
-`--unlimited-dispatches` to remove it. `max_revisions` on a stage limits how
-many times a route may run that stage again after its first success. The review
-that closes the last revision still runs. The next return stops with the
-session still active. Workflow results are printed as JSON on stdout, while
-progress is written to stderr.
+Commit `.agentflow/config.yaml` and `.agentflow/workflows/`. Keep
+`.agentflow/sessions/` out of version control; it contains machine-local
+execution state and generated artifacts.
 
-For workflows that declare `requires`, supply a completed prerequisite session:
+## Concepts
 
-```bash
-agentflow start implement --task "Build the approved plan" --prior <session-id>
-```
+A workflow connects stages through dependencies and explicit decision routes.
 
-## Run a role without a workflow
+- A **model** identifies a provider model and its execution options.
+- A **role** names a kind of work and selects its default model.
+- A **stage** assigns work to a role and may declare dependencies, an artifact,
+  a decision, or both.
+- An **artifact** is a named file produced by a successful stage and stored with
+  the workflow session.
+- A **decision** selects the next route, including a route back for revision.
+- A **session** records executions, events, decisions, and artifacts so work can
+  be inspected or resumed.
 
-Use `agent` for a one-off turn that still records a local session. The role must
-exist in `.agentflow/config.yaml`.
+Use `depends_on` to give a stage upstream artifacts. Use `session.resume_from`
+when the stage must also continue a provider's prior conversational session.
 
-```bash
-agentflow agent start --role reviewer --prompt "Review the latest changes"
-agentflow agent continue <session-id> --role reviewer --prompt "Now summarize the risks"
-```
+## Current scope
 
-Pass `--json` for a machine-readable result. `--file PATH` and `--stdin` are
-alternatives to `--prompt`.
+Agentflow is a local, file-backed orchestration layer for provider CLIs. It does
+not replace their agent runtimes, and it does not hide their distinctive
+capabilities behind a lowest-common-denominator API.
 
-## Workflow notes
+Today, Agentflow supports Codex and Grok, explicit stage routing, review loops,
+local session history, provider-session resume, prerequisite workflows, and
+standalone role execution.
 
-- `depends_on` makes upstream artifacts available to a stage.
-- A stage with `session.resume_from` resumes the provider session from one of
-  its dependencies.
-- `completion.outputs` publishes selected artifacts from successful stages.
-- Provider responses must report `status: complete` or `status: blocked`.
-- Run `agentflow <command> --help` for the current command contract; CLI help
-  is the source of truth for flags and exit codes.
+## Documentation
+
+- [Writing workflows](docs/workflows.md)
+- [Providers and model configuration](docs/providers.md)
+- [Sessions and workflow composition](docs/sessions.md)
+- [CLI commands and execution controls](docs/cli.md)
+
+Run `agentflow <command> --help` for the exact command contract, output fields,
+and exit codes.
 
 ## Development
 
-See [CONTRIBUTION.md](CONTRIBUTION.md) for repository layout, test conventions,
-and commands.
+The workspace contains `agentflow-kernel`, `agentflow-adapters`, and
+`agentflow-cli`. See [CONTRIBUTION.md](CONTRIBUTION.md) for repository layout,
+test conventions, and development commands.
