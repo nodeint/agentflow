@@ -115,6 +115,38 @@ def failed_stage_count(
     )
 
 
+def revision_stop(
+    workflow: WorkflowDocument,
+    snapshots: Sequence[ExecutionSnapshot],
+    stage_id: str,
+) -> bool:
+    """True when another routed visit would pass the stage's max_revisions.
+
+    The first successful visit is free. Each later successful visit is one
+    revision. A failed retry of the visit already started does not count.
+    """
+    stage = workflow.stages.get(stage_id)
+    if stage is None or stage.max_revisions is None:
+        return False
+    latest = _latest_snapshot(snapshots)
+    if (
+        latest is not None
+        and latest.stage_id == stage_id
+        and latest.status == "failed"
+    ):
+        return False
+    completed = sum(
+        1
+        for snapshot in snapshots
+        if snapshot.stage_id == stage_id
+        and snapshot.status == "completed"
+        and snapshot.outcome_status == "complete"
+    )
+    if completed == 0:
+        return False
+    return completed - 1 >= stage.max_revisions
+
+
 def _routed_next_stage(
     workflow: WorkflowDocument,
     snapshots: Sequence[ExecutionSnapshot],

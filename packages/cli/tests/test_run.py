@@ -625,6 +625,23 @@ class ExecuteWorkflowTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("--attempts", stderr.getvalue())
 
+    def test_stage_rejects_a_dispatch_ceiling(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            code = main(
+                [
+                    "stage",
+                    "--workflow",
+                    "plan-review",
+                    "--task",
+                    "Write a plan",
+                    "--max-dispatches",
+                    "2",
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("--max-dispatches", stderr.getvalue())
+
     def test_stage_id_resumes_the_declared_source_session(self) -> None:
         workflow = """\
 id: resume-sample
@@ -686,6 +703,186 @@ stages:
         self.assertIsNone(second.calls[0]["new_agent_id"])
 
 
+_REVISION_LOOP = """\
+id: loop
+stages:
+  - id: plan
+    role: planner
+    max_revisions: 0
+    produces:
+      artifact: plan.md
+  - id: review-plan
+    role: reviewer
+    depends_on:
+      - plan
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: plan
+"""
+
+_OPEN_LOOP = """\
+id: loop
+stages:
+  - id: plan
+    role: planner
+    produces:
+      artifact: plan.md
+  - id: review-plan
+    role: reviewer
+    depends_on:
+      - plan
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: plan
+"""
+
+
+class RevisionCeilingTests(unittest.TestCase):
+    def test_revise_stops_before_another_plan_and_later_commands_stop_too(self) -> None:
+        workspace = write_fake_workflow_workspace({"loop": _REVISION_LOOP})
+        adapter = ScriptedAdapter(
+            [
+                "status: complete\n\nplanned",
+                "status: complete\ndecision: revise\n\nagain",
+                "status: complete\n\nshould not run",
+            ],
+            artifacts=["# Plan\n", None, "# Plan\n"],
+        )
+        code, objects = _run_execute(
+            workspace,
+            ["start", "loop", "--task", "Write a plan", "--max-dispatches", "10"],
+            adapter,
+        )
+        self.assertEqual(code, 4)
+        self.assertEqual(objects[-1]["stop_reason"], "revisions_exhausted")
+        self.assertEqual(objects[-1]["session_status"], "active")
+        self.assertEqual(
+            [item.get("outcome_decision") for item in objects[:-1]],
+            ["", "revise"],
+        )
+        self.assertEqual(len(adapter.calls), 2)
+        session_id = objects[-1]["session_id"]
+        idle = ScriptedAdapter(
+            ["status: complete\n\nnope"], artifacts=["# Plan\n"]
+        )
+        continue_code, continue_objects = _run_execute(
+            workspace,
+            ["continue", session_id, "--max-dispatches", "10"],
+            idle,
+        )
+        self.assertEqual(continue_code, 4)
+        self.assertEqual(continue_objects[-1]["stop_reason"], "revisions_exhausted")
+        self.assertEqual(idle.calls, [])
+        stage = ScriptedAdapter(
+            ["status: complete\n\nnope"], artifacts=["# Plan\n"]
+        )
+        stage_code, stage_objects = _run_execute(
+            workspace, ["stage", session_id], stage
+        )
+        self.assertEqual(stage_code, 4)
+        self.assertEqual(stage_objects[-1]["stop_reason"], "revisions_exhausted")
+        self.assertEqual(stage_objects[-1]["session_status"], "active")
+        self.assertEqual(stage.calls, [])
+
+    def test_dispatch_ceiling_stops_before_the_next_stage(self) -> None:
+        workspace = write_fake_workflow_workspace({"loop": _OPEN_LOOP})
+        adapter = ScriptedAdapter(
+            [
+                "status: complete\n\nplanned",
+                "status: complete\ndecision: revise\n\nagain",
+                "status: complete\n\nshould not run",
+            ],
+            artifacts=["# Plan\n", None, "# Plan\n"],
+        )
+        code, objects = _run_execute(
+            workspace,
+            ["start", "loop", "--task", "Write a plan", "--max-dispatches", "2"],
+            adapter,
+        )
+        self.assertEqual(code, 5)
+        self.assertEqual(objects[-1]["stop_reason"], "dispatch_limit")
+        self.assertEqual(objects[-1]["session_status"], "active")
+        self.assertEqual(len(adapter.calls), 2)
+        self.assertEqual(objects[-2]["outcome_decision"], "revise")
+
+    def test_default_dispatch_ceiling_matches_the_constant(self) -> None:
+        from agentflow_kernel.execute import DEFAULT_MAX_DISPATCHES
+
+        workspace = write_fake_workflow_workspace({"loop": _OPEN_LOOP})
+        responses = []
+        artifacts = []
+        for index in range(DEFAULT_MAX_DISPATCHES + 1):
+            if index % 2 == 0:
+                responses.append("status: complete\n\nplanned")
+                artifacts.append("# Plan\n")
+            else:
+                responses.append("status: complete\ndecision: revise\n\nagain")
+                artifacts.append(None)
+        adapter = ScriptedAdapter(responses, artifacts)
+        code, objects = _run_execute(
+            workspace,
+            ["start", "loop", "--task", "Write a plan"],
+            adapter,
+        )
+        self.assertEqual(code, 5)
+        self.assertEqual(objects[-1]["stop_reason"], "dispatch_limit")
+        self.assertEqual(len(adapter.calls), DEFAULT_MAX_DISPATCHES)
+
+    def test_unlimited_dispatches_runs_past_the_default_ceiling(self) -> None:
+        workspace = write_fake_workflow_workspace({"loop": _OPEN_LOOP})
+        adapter = ScriptedAdapter(
+            [
+                "status: complete\n\nplanned",
+                "status: complete\ndecision: approved\n\nok",
+            ],
+            artifacts=["# Plan\n", None],
+        )
+        code, objects = _run_execute(
+            workspace,
+            ["start", "loop", "--task", "Write a plan", "--unlimited-dispatches"],
+            adapter,
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(objects[-1]["stop_reason"], "completed")
+        self.assertEqual(len(adapter.calls), 2)
+
+    def test_rejects_a_non_positive_dispatch_ceiling(self) -> None:
+        workspace = write_fake_workflow_workspace({"loop": _OPEN_LOOP})
+        with self.assertRaisesRegex(ConfigurationError, "--max-dispatches"):
+            execute_workflow(
+                workspace,
+                action="start",
+                workflow_id="loop",
+                task="Write a plan",
+                max_dispatches=0,
+            )
+
+    def test_unlimited_dispatches_rejects_an_explicit_ceiling(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            code = main(
+                [
+                    "start",
+                    "loop",
+                    "--task",
+                    "Write a plan",
+                    "--max-dispatches",
+                    "4",
+                    "--unlimited-dispatches",
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("--unlimited-dispatches", stderr.getvalue())
+
+
 class ArgvShapeTests(unittest.TestCase):
     def test_continue_rejects_flags_that_start_a_session(self) -> None:
         stderr = io.StringIO()
@@ -724,7 +921,11 @@ class CommandHelpTests(unittest.TestCase):
         text = help_out.getvalue()
         self.assertIn("Usage: agentflow start", text)
         self.assertIn("Exit 3", text)
+        self.assertIn("Exit 4", text)
+        self.assertIn("Exit 5", text)
         self.assertIn("--attempts", text)
+        self.assertIn("--max-dispatches", text)
+        self.assertIn("--unlimited-dispatches", text)
 
     def test_help_subcommand_prints_flags_declared_on_that_subcommand(self) -> None:
         stdout = io.StringIO()
@@ -733,6 +934,15 @@ class CommandHelpTests(unittest.TestCase):
         text = stdout.getvalue()
         self.assertIn("Usage: agentflow continue", text)
         self.assertIn("--attempts", text)
+        self.assertIn("--max-dispatches", text)
+
+    def test_stage_help_has_no_dispatch_ceiling(self) -> None:
+        stdout = io.StringIO()
+        with patch("sys.stdout", stdout):
+            self.assertEqual(main(["stage", "--help"]), 0)
+        text = stdout.getvalue()
+        self.assertIn("Exit 4", text)
+        self.assertNotIn("--max-dispatches", text)
 
     def test_help_rejects_an_unknown_subcommand(self) -> None:
         stderr = io.StringIO()

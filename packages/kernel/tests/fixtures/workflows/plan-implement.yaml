@@ -4,6 +4,7 @@ description: Implement and review production code, then write and review tests.
 stages:
   - id: implement
     role: developer
+    max_revisions: 3
     depends_on: []
     instructions:
       - Implement production code only.
@@ -28,6 +29,7 @@ stages:
 
   - id: write-tests
     role: developer
+    max_revisions: 3
     session:
       resume_from: implement
     depends_on:

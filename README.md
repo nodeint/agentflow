@@ -80,6 +80,7 @@ constraints:
 stages:
   - id: plan
     role: developer
+    max_revisions: 3
     depends_on: []
     instructions:
       - Write an implementation plan.
@@ -127,8 +128,13 @@ agentflow watch <session-id>
 ```
 
 `start` and `continue` allow three failed stage attempts by
-default; pass `--attempts N` to change that limit. Workflow results are printed
-as JSON on stdout, while progress is written to stderr.
+default; pass `--attempts N` to change that limit. They also stop after 20
+stage dispatches. Pass `--max-dispatches N` to change that ceiling, or
+`--unlimited-dispatches` to remove it. `max_revisions` on a stage limits how
+many times a route may run that stage again after its first success. The review
+that closes the last revision still runs. The next return stops with the
+session still active. Workflow results are printed as JSON on stdout, while
+progress is written to stderr.
 
 For workflows that declare `requires`, supply a completed prerequisite session:
 

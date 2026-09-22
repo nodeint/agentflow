@@ -114,6 +114,83 @@ stages:
             with self.assertRaisesRegex(ValueError, "must be a dependency"):
                 load_workflow_document(path)
 
+    def test_loads_max_revisions_on_a_route_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "flow.yaml"
+            path.write_text(
+                """\
+id: loop
+stages:
+  - id: plan
+    role: planner
+    max_revisions: 0
+  - id: review
+    role: reviewer
+    depends_on:
+      - plan
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: plan
+""",
+                encoding="utf-8",
+            )
+            document = load_workflow_document(path)
+        self.assertEqual(document.stages["plan"].max_revisions, 0)
+        self.assertIsNone(document.stages["review"].max_revisions)
+
+    def test_rejects_max_revisions_without_a_route_back(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "flow.yaml"
+            path.write_text(
+                """\
+id: loop
+stages:
+  - id: plan
+    role: planner
+  - id: review
+    role: reviewer
+    max_revisions: 3
+    depends_on:
+      - plan
+    decision:
+      values:
+        - revise
+      routes:
+        revise: plan
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "requires a route back to review"):
+                load_workflow_document(path)
+
+    def test_rejects_a_negative_max_revisions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "flow.yaml"
+            path.write_text(
+                """\
+id: loop
+stages:
+  - id: plan
+    role: planner
+    max_revisions: -1
+  - id: review
+    role: reviewer
+    depends_on:
+      - plan
+    decision:
+      values: [revise]
+      routes:
+        revise: plan
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "non-negative integer"):
+                load_workflow_document(path)
+
     def test_rejects_empty_stage_model_and_thinking(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "flow.yaml"

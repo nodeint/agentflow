@@ -18,6 +18,7 @@ class StageSpec:
     instructions: tuple[str, ...] = ()
     model_key: Optional[str] = None
     thinking: Optional[str] = None
+    max_revisions: Optional[int] = None
     routes: dict[str, str] = field(default_factory=dict)
 
 
@@ -118,6 +119,7 @@ def _parse_stages(raw: Any) -> dict[str, StageSpec]:
             ),
             model_key=_optional_stage_string(item, "model", stage_id),
             thinking=_optional_stage_string(item, "thinking", stage_id),
+            max_revisions=_stage_max_revisions(item, stage_id),
             routes={},
         )
     for item in raw:
@@ -226,12 +228,22 @@ def _stage_routes(
 
 
 def _validate_stage_graph(stages: dict[str, StageSpec]) -> None:
+    targets = {
+        target
+        for stage in stages.values()
+        for target in stage.routes.values()
+        if target != "complete"
+    }
     for stage in stages.values():
         for dep in stage.depends_on:
             if dep not in stages:
                 raise ValueError(
                     f"stages.{stage.id}.depends_on is not a declared stage: {dep}"
                 )
+        if stage.max_revisions is not None and stage.id not in targets:
+            raise ValueError(
+                f"stages.{stage.id}.max_revisions requires a route back to {stage.id}."
+            )
 
 
 def _stage_decision_values(stage: dict[str, Any], stage_id: str) -> tuple[str, ...]:
@@ -309,6 +321,16 @@ def _parse_completion(raw: dict[str, Any], stages: dict[str, StageSpec]) -> Work
         seen.add(name)
         outputs.append(WorkflowOutput(name=name, from_stage=from_stage, artifact=artifact))
     return WorkflowCompletion(stage=stage_id, decision=decision, outputs=tuple(outputs))
+
+
+def _stage_max_revisions(stage: dict[str, Any], stage_id: str) -> Optional[int]:
+    if "max_revisions" not in stage:
+        return None
+    raw = stage.get("max_revisions")
+    field = f"stages.{stage_id}.max_revisions"
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return int(raw.strip())
+    raise ValueError(f"{field} must be a non-negative integer.")
 
 
 def _optional_stage_string(stage: dict[str, Any], key: str, stage_id: str) -> Optional[str]:

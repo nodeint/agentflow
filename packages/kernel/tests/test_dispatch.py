@@ -18,6 +18,7 @@ from agentflow_kernel.selection import (
     NextStage,
     Stop,
     next_stage,
+    revision_stop,
     stage_dispatch_error,
 )
 from agentflow_kernel.session_records import require_agent_session, resolve_prior_session_id
@@ -324,6 +325,42 @@ class NextStageTests(unittest.TestCase):
             "active",
         )
         self.assertEqual(result, Error("an execution is still running"))
+
+    def test_revision_stop_counts_successful_returns_per_stage(self) -> None:
+        workflow = WorkflowDocument(
+            id="loop",
+            stages={
+                "plan": StageSpec(id="plan", role="planner", max_revisions=1),
+                "review": StageSpec(
+                    id="review",
+                    role="reviewer",
+                    depends_on=("plan",),
+                    routes={"approved": "complete", "revise": "plan"},
+                ),
+                "write-tests": StageSpec(
+                    id="write-tests", role="developer", max_revisions=0
+                ),
+            },
+        )
+        first_return = [
+            _snapshot("plan", 1),
+            _snapshot("review", 2, decision="revise"),
+        ]
+        self.assertFalse(revision_stop(workflow, first_return, "plan"))
+        self.assertFalse(revision_stop(workflow, first_return, "review"))
+        spent = first_return + [
+            _snapshot("plan", 3),
+            _snapshot("review", 4, decision="revise"),
+        ]
+        self.assertTrue(revision_stop(workflow, spent, "plan"))
+        retry = first_return + [
+            _snapshot("plan", 3, status="failed", outcome_status=None)
+        ]
+        self.assertFalse(revision_stop(workflow, retry, "plan"))
+        self.assertTrue(
+            revision_stop(workflow, [_snapshot("write-tests", 1)], "write-tests")
+        )
+        self.assertFalse(revision_stop(workflow, [], "write-tests"))
 
     def test_two_roots_are_ambiguous(self) -> None:
         workflow = WorkflowDocument(

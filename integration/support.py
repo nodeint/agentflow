@@ -46,6 +46,7 @@ description: Write and approve a plan before implementation.
 stages:
   - id: plan
     role: planner
+    max_revisions: 3
     depends_on: []
     produces:
       artifact: plan.md

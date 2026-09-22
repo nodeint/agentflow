@@ -6,7 +6,11 @@ from typing import Annotated, Any, Optional
 import typer
 
 from agentflow_kernel.agent_runner import AgentToolRunner
-from agentflow_kernel.execute import ExecuteRequest, execute_named_workflow
+from agentflow_kernel.execute import (
+    DEFAULT_MAX_DISPATCHES,
+    ExecuteRequest,
+    execute_named_workflow,
+)
 
 from ..workspace import find_workspace, invocation_cwd
 
@@ -20,6 +24,12 @@ _PRIOR_HELP = (
     "Required on create when the workflow declares requires."
 )
 _ATTEMPTS_HELP = "Failed executions allowed for one stage. Default: 3."
+_DISPATCHES_HELP = (
+    "Stage dispatches allowed in this command. "
+    f"Default: {DEFAULT_MAX_DISPATCHES}. "
+    "Pass --unlimited-dispatches to remove the ceiling."
+)
+_UNLIMITED_DISPATCHES_HELP = "Remove the dispatch ceiling for this command."
 
 
 @workflow_commands.command("start")
@@ -42,6 +52,19 @@ def execute_start(
             show_default=False,
         ),
     ] = 3,
+    max_dispatches: Annotated[
+        Optional[int],
+        typer.Option(
+            "--max-dispatches",
+            metavar="N",
+            help=_DISPATCHES_HELP,
+            show_default=False,
+        ),
+    ] = None,
+    unlimited_dispatches: Annotated[
+        bool,
+        typer.Option("--unlimited-dispatches", help=_UNLIMITED_DISPATCHES_HELP),
+    ] = False,
 ) -> None:
     """Create a session and continue until it stops.
 
@@ -50,6 +73,10 @@ def execute_start(
     completed session of that workflow with the required decision.
     --attempts limits failed executions of one stage. The default is 3.
     A value below 1 is an error.
+    --max-dispatches limits stage dispatches in this command. The default is 20.
+    A value below 1 is an error. --unlimited-dispatches removes that ceiling.
+    A stage max_revisions limits how many times a route may run that stage again
+    after its first success. The review that closes the last revision still runs.
 
     Provider, model, and prompt come from the workflow and config.yaml.
     Stdout is one JSON object: session_id, session_status, stop_reason, outputs, stages.
@@ -59,8 +86,11 @@ def execute_start(
     Exit 1 when the session is blocked.
     Exit 2 on a configuration error.
     Exit 3 when --attempts is spent. The session stays active.
+    Exit 4 when a route would exceed max_revisions. The session stays active.
+    Exit 5 when --max-dispatches is spent. The session stays active.
     Exit 130 when cancelled.
     """
+    ceiling = _dispatch_ceiling(max_dispatches, unlimited_dispatches)
     raise typer.Exit(
         execute_workflow(
             find_workspace(invocation_cwd()),
@@ -69,6 +99,7 @@ def execute_start(
             task=task,
             prior_session_id=prior,
             max_attempts=attempts,
+            max_dispatches=ceiling,
         )
     )
 
@@ -89,6 +120,19 @@ def execute_continue(
             show_default=False,
         ),
     ] = 3,
+    max_dispatches: Annotated[
+        Optional[int],
+        typer.Option(
+            "--max-dispatches",
+            metavar="N",
+            help=_DISPATCHES_HELP,
+            show_default=False,
+        ),
+    ] = None,
+    unlimited_dispatches: Annotated[
+        bool,
+        typer.Option("--unlimited-dispatches", help=_UNLIMITED_DISPATCHES_HELP),
+    ] = False,
 ) -> None:
     """Resume a session until it stops.
 
@@ -97,6 +141,9 @@ def execute_continue(
     --prior is the completed session named by requires.
     --attempts limits failed executions of one stage. The default is 3.
     A value below 1 is an error.
+    --max-dispatches limits stage dispatches in this command. The default is 20.
+    A value below 1 is an error. --unlimited-dispatches removes that ceiling.
+    The revision count is kept.
 
     Provider, model, and prompt come from the workflow and config.yaml.
     Stdout is one JSON object: session_id, session_status, stop_reason, outputs, stages.
@@ -106,8 +153,11 @@ def execute_continue(
     Exit 1 when the session is blocked.
     Exit 2 on a configuration error.
     Exit 3 when --attempts is spent. The session stays active.
+    Exit 4 when a route would exceed max_revisions. The session stays active.
+    Exit 5 when --max-dispatches is spent. The session stays active.
     Exit 130 when cancelled.
     """
+    ceiling = _dispatch_ceiling(max_dispatches, unlimited_dispatches)
     raise typer.Exit(
         execute_workflow(
             find_workspace(invocation_cwd()),
@@ -115,6 +165,7 @@ def execute_continue(
             session_id=session,
             prior_session_id=prior,
             max_attempts=attempts,
+            max_dispatches=ceiling,
         )
     )
 
@@ -153,6 +204,8 @@ def execute_stage(
     Pass SESSION, or both --workflow and --task. Not both forms.
     The command takes no stage id.
     --prior is required on create when the workflow declares requires.
+    A route back to a stage that has used max_revisions is refused.
+    This command has no dispatch ceiling.
 
     Provider, model, and prompt come from the workflow and config.yaml.
     Stdout is one JSON object: session_id, session_status, stop_reason, outputs, stages.
@@ -161,6 +214,7 @@ def execute_stage(
     Exit 0 when the stage outcome is complete, or the session is already completed.
     Exit 1 when the stage is not complete, or the session is blocked.
     Exit 2 on a configuration error.
+    Exit 4 when a route would exceed max_revisions. The session stays active.
     Exit 130 when cancelled.
     """
     has_session = _text(session) is not None
@@ -179,6 +233,7 @@ def execute_stage(
             session_id=session,
             prior_session_id=prior,
             max_attempts=None,
+            max_dispatches=None,
         )
     )
 
@@ -192,6 +247,7 @@ def execute_workflow(
     session_id: Optional[str] = None,
     prior_session_id: Optional[str] = None,
     max_attempts: Optional[int] = 3,
+    max_dispatches: Optional[int] = DEFAULT_MAX_DISPATCHES,
     runner: Optional[AgentToolRunner] = None,
 ) -> int:
     once = action == "stage"
@@ -204,10 +260,23 @@ def execute_workflow(
             session_id=None if creating else session_id,
             prior_session_id=prior_session_id,
             max_attempts=None if once else max_attempts,
+            max_dispatches=None if once else max_dispatches,
             once=once,
         ),
         runner=runner or AgentToolRunner(),
     )
+
+
+def _dispatch_ceiling(max_dispatches: Optional[int], unlimited: bool) -> Optional[int]:
+    if unlimited and max_dispatches is not None:
+        raise typer.BadParameter(
+            "--max-dispatches cannot be combined with --unlimited-dispatches."
+        )
+    if unlimited:
+        return None
+    if max_dispatches is None:
+        return DEFAULT_MAX_DISPATCHES
+    return max_dispatches
 
 
 def _text(value: Any) -> Optional[str]:

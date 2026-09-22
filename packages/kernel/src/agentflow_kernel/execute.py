@@ -22,12 +22,16 @@ from .selection import (
     Stop,
     failed_stage_count,
     next_stage,
+    revision_stop,
 )
 from .prompt import build_stage_prompt
 from .session_records import bind_prior_session_id, create_workflow_session, resolve_prior_session_id
 from .runtime import log
 from .session_store import SessionStore
 from .workflow import WorkflowDocument
+
+
+DEFAULT_MAX_DISPATCHES = 20
 
 
 @dataclass(frozen=True)
@@ -38,14 +42,16 @@ class ExecuteRequest:
     stage_id: Optional[str] = None
     prior_session_id: Optional[str] = None
     max_attempts: Optional[int] = 3
+    max_dispatches: Optional[int] = DEFAULT_MAX_DISPATCHES
     once: bool = False
-
 
 _EXECUTE_EXIT_CODES = {
     "completed": 0,
     "blocked": 1,
     "cancelled": 130,
     "retry_exhausted": 3,
+    "revisions_exhausted": 4,
+    "dispatch_limit": 5,
     "stage": 0,
 }
 _TERMINAL_SESSION_STATUSES = frozenset({"completed", "blocked", "cancelled"})
@@ -60,8 +66,11 @@ def execute_named_workflow(
     stage_id = request.stage_id
     max_attempts = request.max_attempts
     once = request.once
+    max_dispatches = request.max_dispatches
     if not once and (max_attempts is None or max_attempts < 1):
         raise ConfigurationError("--attempts must be at least 1.")
+    if not once and max_dispatches is not None and max_dispatches < 1:
+        raise ConfigurationError("--max-dispatches must be at least 1.")
     store = SessionStore(workspace)
     session_id = request.session_id
     workflow: Optional[WorkflowDocument] = None
@@ -114,6 +123,7 @@ def execute_named_workflow(
             workflow_id,
             session_id,
             max_attempts,
+            max_dispatches,
             runner or AgentToolRunner(),
         )
     except CancellationRequested as exc:
@@ -184,6 +194,9 @@ def _run_execute_once(
         raise ConfigurationError(
             f"Stage {stage_id} is not the eligible stage {selected.stage_id}."
         )
+    if revision_stop(workflow, snapshots, selected.stage_id):
+        _print_execute_final(status, "revisions_exhausted", [])
+        return _EXECUTE_EXIT_CODES["revisions_exhausted"]
     assert_stage_dispatchable(workspace, workflow, session_id, selected.stage_id)
     stage = _dispatch_execute_stage(
         workspace,
@@ -211,9 +224,11 @@ def _run_execute_loop(
     workflow_id: str,
     session_id: str,
     max_attempts: Optional[int],
+    max_dispatches: Optional[int],
     runner: Optional[AgentToolRunner],
 ) -> int:
     stages: list[dict[str, Any]] = []
+    dispatched = 0
     while True:
         store.reap_orphaned_executions(session_id, on_live_owner="raise")
         snapshots = store.execution_snapshots(session_id)
@@ -226,7 +241,14 @@ def _run_execute_loop(
             return _EXECUTE_EXIT_CODES.get(selected.reason, 2)
         if failed_stage_count(snapshots, selected.stage_id) >= max_attempts:
             _print_execute_final(status, "retry_exhausted", stages)
-            return 3
+            return _EXECUTE_EXIT_CODES["retry_exhausted"]
+        if revision_stop(workflow, snapshots, selected.stage_id):
+            _print_execute_final(status, "revisions_exhausted", stages)
+            return _EXECUTE_EXIT_CODES["revisions_exhausted"]
+        if max_dispatches is not None and dispatched >= max_dispatches:
+            _print_execute_final(status, "dispatch_limit", stages)
+            return _EXECUTE_EXIT_CODES["dispatch_limit"]
+        dispatched += 1
         stages.append(
             _dispatch_execute_stage(
                 workspace,
