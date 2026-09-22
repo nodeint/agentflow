@@ -12,33 +12,15 @@ import unittest
 from agentflow_kernel.config import (
     ConfigurationError,
     load_yaml_mapping,
-    resolve_coordinator,
     resolve_role_target,
     resolve_stage_target,
 )
 from tests.support import (
-    CONFIG,
     STAGE_CONFIG,
     write_config,
     write_role_workspace,
     write_stage_workspace,
 )
-
-
-class CoordinatorConfigTests(unittest.TestCase):
-    def test_rejects_unsupported_coordinator_provider(self) -> None:
-        config = load_yaml_mapping(
-            write_config(CONFIG.replace("provider: codex", "provider: claude", 1))
-        )
-        with self.assertRaisesRegex(ConfigurationError, "unsupported provider 'claude'"):
-            resolve_coordinator(config)
-
-    def test_rejects_unsupported_coordinator_thinking(self) -> None:
-        config = load_yaml_mapping(
-            write_config(CONFIG.replace("thinking: high", "thinking: xhigh", 1))
-        )
-        with self.assertRaisesRegex(ConfigurationError, "not allowed"):
-            resolve_coordinator(config)
 
 
 class StageTargetTests(unittest.TestCase):

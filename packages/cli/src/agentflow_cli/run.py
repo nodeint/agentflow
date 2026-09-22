@@ -1,24 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Optional
 
 import typer
 
-from agentflow_kernel.config import (
-    ConfigurationError,
-    load_yaml_mapping,
-    resolve_coordinator,
-)
+from agentflow_kernel.config import ConfigurationError
 
 from .commands.agent import agent_app, dispatch_agent
 from .commands.execute import execute_app, execute_workflow
 from .commands.sessions import list_sessions, sessions_app
 from .commands.watch import watch_app, watch_session
-from .coordinator import build_coordinator_command
-from .display import print_error, print_notice
+from .display import print_error
 from .workspace import (
     find_workspace,
     invocation_cwd,
@@ -40,34 +34,6 @@ app = typer.Typer(
 )
 
 
-coordinator_app = typer.Typer(
-    add_completion=False,
-    invoke_without_command=True,
-    subcommand_metavar="",
-    rich_markup_mode="rich",
-)
-
-
-@coordinator_app.callback(invoke_without_command=True)
-def coordinator_command() -> None:
-    """Start the interactive coordinator.
-
-    Replace this process with the provider CLI selected by runtime.coordinator
-    in .agentflow/config.yaml. The coordinator is not a workflow role.
-    """
-    workspace = find_workspace(invocation_cwd())
-    config = load_yaml_mapping(workspace / ".agentflow/config.yaml")
-    coordinator = resolve_coordinator(config)
-    command = build_coordinator_command(workspace, coordinator)
-    print_notice(
-        f"Opening coordinator with {coordinator.provider}/{coordinator.model} "
-        f"(thinking: {coordinator.thinking})."
-    )
-    os.execvp(command[0], command)
-    raise typer.Exit(127)
-
-
-app.add_typer(coordinator_app, name="coordinator")
 app.add_typer(sessions_app, name="sessions")
 app.add_typer(execute_app, name="execute")
 app.add_typer(agent_app, name="agent")

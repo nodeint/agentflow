@@ -12,17 +12,6 @@ class ConfigurationError(ValueError):
     """Raised when Agentflow configuration cannot be resolved."""
 
 
-SUPPORTED_COORDINATOR_PROVIDERS = frozenset({"codex", "grok"})
-
-
-@dataclass(frozen=True)
-class CoordinatorConfig:
-    model_key: str
-    provider: str
-    model: str
-    thinking: str
-
-
 @dataclass(frozen=True)
 class StageTarget:
     provider: str
@@ -43,39 +32,6 @@ def load_yaml_mapping(path: Path) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ConfigurationError("Invalid configuration: expected a mapping.")
     return parsed
-
-
-def resolve_coordinator(config: dict[str, Any]) -> CoordinatorConfig:
-    runtime = _mapping(config.get("runtime"), "runtime")
-    coordinator = _mapping(runtime.get("coordinator"), "runtime.coordinator")
-    model_key = _string(coordinator.get("model"), "runtime.coordinator.model")
-    models = _mapping(config.get("models"), "models")
-    model_config = _mapping(models.get(model_key), f"models.{model_key}")
-    provider = _string(model_config.get("provider"), f"models.{model_key}.provider")
-    if provider not in SUPPORTED_COORDINATOR_PROVIDERS:
-        supported = ", ".join(sorted(SUPPORTED_COORDINATOR_PROVIDERS))
-        raise ConfigurationError(
-            f"runtime.coordinator.model resolved to unsupported provider {provider!r}. "
-            f"Supported: {supported}."
-        )
-    model = _string(model_config.get("model"), f"models.{model_key}.model")
-    thinking = coordinator.get("thinking")
-    if thinking is None:
-        thinking_config = _mapping(model_config.get("thinking"), f"models.{model_key}.thinking")
-        thinking = thinking_config.get("default")
-    resolved_thinking = _string(thinking, "runtime.coordinator.thinking")
-    thinking_config = _mapping(model_config.get("thinking"), f"models.{model_key}.thinking")
-    allowed = _strings(thinking_config.get("allowed"), f"models.{model_key}.thinking.allowed")
-    if resolved_thinking not in allowed:
-        raise ConfigurationError(
-            f"runtime.coordinator.thinking {resolved_thinking!r} is not allowed by models.{model_key}."
-        )
-    return CoordinatorConfig(
-        model_key=model_key,
-        provider=provider,
-        model=model,
-        thinking=resolved_thinking,
-    )
 
 
 def resolve_stage_target(

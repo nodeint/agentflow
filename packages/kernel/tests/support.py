@@ -149,23 +149,6 @@ completion:
       artifact: plan.md
 """
 
-CONFIG = """\
-models:
-  gpt-terra:
-    provider: codex
-    model: gpt-5.6-terra
-    thinking:
-      allowed: [medium, high]
-      default: medium
-runtime:
-  coordinator:
-    model: gpt-terra
-    thinking: high
-roles:
-  developer:
-    default_model: gpt-terra
-"""
-
 STAGE_CONFIG = """\
 models:
   grok:
