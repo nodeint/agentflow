@@ -10,9 +10,8 @@ from agentflow_kernel.execute import ExecuteRequest, execute_named_workflow
 
 from ..workspace import find_workspace, invocation_cwd
 
-execute_app = typer.Typer(
+workflow_commands = typer.Typer(
     add_completion=False,
-    no_args_is_help=True,
     rich_markup_mode="rich",
 )
 
@@ -23,33 +22,7 @@ _PRIOR_HELP = (
 _ATTEMPTS_HELP = "Failed executions allowed for one stage. Default: 3."
 
 
-@execute_app.callback()
-def execute_callback() -> None:
-    """Run a named workflow.
-
-    start creates a session and continues until the session stops.
-    continue resumes a session and does the same. It does not reset the attempt count.
-    stage dispatches the next eligible stage once. It takes no stage id.
-    On a new session, pass --workflow and --task instead of SESSION.
-
-    --prior is the completed session named by requires. It is required on create
-    when the workflow declares requires, and it must match that workflow and
-    decision. --attempts limits failed executions of one stage on start and
-    continue. The default is 3. A value below 1 is an error. stage ignores it.
-
-    Provider, model, and prompt come from the workflow and config.yaml.
-    Stdout is one JSON object: session_id, session_status, stop_reason, outputs, stages.
-    Progress is on stderr.
-
-    Exit 0 when the session is completed, or a one-shot stage outcome is complete.
-    Exit 1 when the session is blocked, or a one-shot stage is not complete.
-    Exit 2 on a configuration error.
-    Exit 3 when start or continue spends --attempts. The session stays active.
-    Exit 130 when cancelled.
-    """
-
-
-@execute_app.command("start")
+@workflow_commands.command("start")
 def execute_start(
     workflow: Annotated[str, typer.Argument(metavar="WORKFLOW", help="Workflow id.")],
     task: Annotated[
@@ -73,6 +46,20 @@ def execute_start(
     """Create a session and continue until it stops.
 
     WORKFLOW is the workflow id. --task is recorded on the new session.
+    --prior is required when the workflow declares requires. It must be a
+    completed session of that workflow with the required decision.
+    --attempts limits failed executions of one stage. The default is 3.
+    A value below 1 is an error.
+
+    Provider, model, and prompt come from the workflow and config.yaml.
+    Stdout is one JSON object: session_id, session_status, stop_reason, outputs, stages.
+    Progress is on stderr.
+
+    Exit 0 when the session is completed.
+    Exit 1 when the session is blocked.
+    Exit 2 on a configuration error.
+    Exit 3 when --attempts is spent. The session stays active.
+    Exit 130 when cancelled.
     """
     raise typer.Exit(
         execute_workflow(
@@ -86,7 +73,7 @@ def execute_start(
     )
 
 
-@execute_app.command("continue")
+@workflow_commands.command("continue")
 def execute_continue(
     session: Annotated[str, typer.Argument(metavar="SESSION", help="Session to resume.")],
     prior: Annotated[
@@ -106,6 +93,20 @@ def execute_continue(
     """Resume a session until it stops.
 
     A completed, blocked, or cancelled session is not dispatched again.
+    The attempt count is kept.
+    --prior is the completed session named by requires.
+    --attempts limits failed executions of one stage. The default is 3.
+    A value below 1 is an error.
+
+    Provider, model, and prompt come from the workflow and config.yaml.
+    Stdout is one JSON object: session_id, session_status, stop_reason, outputs, stages.
+    Progress is on stderr.
+
+    Exit 0 when the session is completed.
+    Exit 1 when the session is blocked.
+    Exit 2 on a configuration error.
+    Exit 3 when --attempts is spent. The session stays active.
+    Exit 130 when cancelled.
     """
     raise typer.Exit(
         execute_workflow(
@@ -118,7 +119,7 @@ def execute_continue(
     )
 
 
-@execute_app.command("stage")
+@workflow_commands.command("stage")
 def execute_stage(
     session: Annotated[
         Optional[str],
@@ -150,6 +151,17 @@ def execute_stage(
     """Dispatch the next eligible stage once.
 
     Pass SESSION, or both --workflow and --task. Not both forms.
+    The command takes no stage id.
+    --prior is required on create when the workflow declares requires.
+
+    Provider, model, and prompt come from the workflow and config.yaml.
+    Stdout is one JSON object: session_id, session_status, stop_reason, outputs, stages.
+    Progress is on stderr.
+
+    Exit 0 when the stage outcome is complete, or the session is already completed.
+    Exit 1 when the stage is not complete, or the session is blocked.
+    Exit 2 on a configuration error.
+    Exit 130 when cancelled.
     """
     has_session = _text(session) is not None
     has_workflow = _text(workflow) is not None

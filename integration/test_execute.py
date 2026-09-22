@@ -32,7 +32,7 @@ class ExecuteTests(unittest.TestCase):
             write_workspace(workspace, GROK_CONFIG, {"plan-review": PLAN_REVIEW})
             code, objects, stderr = run_main(
                 workspace,
-                ["execute", "start", "plan-review", "--task", "Write a plan"],
+                ["start", "plan-review", "--task", "Write a plan"],
             )
             self.assertEqual(code, 0, stderr)
             result = objects[0]
@@ -60,7 +60,6 @@ class ExecuteTests(unittest.TestCase):
             code, objects, stderr = run_main(
                 workspace,
                 [
-                    "execute",
                     "stage",
                     "--workflow",
                     "draft-note",
@@ -84,7 +83,6 @@ class ExecuteTests(unittest.TestCase):
             code, objects, stderr = run_main(
                 workspace,
                 [
-                    "execute",
                     "start",
                     "solo",
                     "--task",

@@ -124,7 +124,7 @@ def _run_execute(
         patch("sys.stdout", stdout),
         patch("agentflow_cli.commands.execute.AgentToolRunner", return_value=runner),
     ):
-        code = main(["execute", *arguments], cwd=workspace)
+        code = main(arguments, cwd=workspace)
     payload = json.loads(stdout.getvalue())
     summary = {
         "session_id": payload["session_id"],
@@ -267,9 +267,8 @@ class ExecuteWorkflowTests(unittest.TestCase):
             }
         )
         for argv in (
-            ["execute", "start", "plan-implement", "--task", "Do work"],
+            ["start", "plan-implement", "--task", "Do work"],
             [
-                "execute",
                 "stage",
                 "--workflow",
                 "plan-implement",
@@ -614,7 +613,6 @@ class ExecuteWorkflowTests(unittest.TestCase):
         with redirect_stderr(stderr):
             code = main(
                 [
-                    "execute",
                     "stage",
                     "--workflow",
                     "plan-review",
@@ -692,7 +690,7 @@ class ArgvShapeTests(unittest.TestCase):
     def test_continue_rejects_flags_that_start_a_session(self) -> None:
         stderr = io.StringIO()
         with redirect_stderr(stderr):
-            code = main(["execute", "continue", "run-1", "--task", "again"])
+            code = main(["continue", "run-1", "--task", "again"])
         self.assertEqual(code, 2)
         self.assertIn("--task", stderr.getvalue())
 
@@ -722,22 +720,24 @@ class CommandHelpTests(unittest.TestCase):
             cwd = Path(tmp)
             help_out = io.StringIO()
             with patch("sys.stdout", help_out):
-                self.assertEqual(main(["execute", "--help"], cwd=cwd), 0)
+                self.assertEqual(main(["start", "--help"], cwd=cwd), 0)
         text = help_out.getvalue()
-        self.assertIn("Usage: agentflow execute", text)
+        self.assertIn("Usage: agentflow start", text)
         self.assertIn("Exit 3", text)
         self.assertIn("--attempts", text)
 
     def test_help_subcommand_prints_flags_declared_on_that_subcommand(self) -> None:
         stdout = io.StringIO()
         with patch("sys.stdout", stdout):
-            self.assertEqual(main(["execute", "start", "--help"]), 0)
-        self.assertIn("--attempts", stdout.getvalue())
+            self.assertEqual(main(["continue", "--help"]), 0)
+        text = stdout.getvalue()
+        self.assertIn("Usage: agentflow continue", text)
+        self.assertIn("--attempts", text)
 
     def test_help_rejects_an_unknown_subcommand(self) -> None:
         stderr = io.StringIO()
         with redirect_stderr(stderr):
-            code = main(["execute", "missing"])
+            code = main(["missing"])
         self.assertEqual(code, 2)
         self.assertIn("missing", stderr.getvalue())
 
@@ -745,8 +745,11 @@ class CommandHelpTests(unittest.TestCase):
         stdout = io.StringIO()
         with patch("sys.stdout", stdout):
             self.assertEqual(main([]), 2)
-        self.assertIn("Usage: agentflow", stdout.getvalue())
-        self.assertIn("execute", stdout.getvalue())
+        text = stdout.getvalue()
+        self.assertIn("Usage: agentflow", text)
+        self.assertIn("start", text)
+        self.assertIn("stage", text)
+        self.assertNotIn("execute", text)
 
 
 if __name__ == "__main__":

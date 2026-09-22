@@ -9,7 +9,7 @@ import typer
 from agentflow_kernel.config import ConfigurationError
 
 from .commands.agent import agent_app, dispatch_agent
-from .commands.execute import execute_app, execute_workflow
+from .commands.execute import execute_workflow, workflow_commands
 from .commands.sessions import list_sessions, sessions_app
 from .commands.watch import watch_app, watch_session
 from .display import print_error
@@ -35,7 +35,7 @@ app = typer.Typer(
 
 
 app.add_typer(sessions_app, name="sessions")
-app.add_typer(execute_app, name="execute")
+app.add_typer(workflow_commands)
 app.add_typer(agent_app, name="agent")
 app.add_typer(watch_app, name="watch")
 

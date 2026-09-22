@@ -113,27 +113,27 @@ Run commands from the configured project or any of its subdirectories.
 
 ```bash
 # Create a session and run until it completes, blocks, or exhausts attempts.
-agentflow execute start plan-review --task "Plan the account settings redesign"
+agentflow start plan-review --task "Plan the account settings redesign"
 
 # Advance exactly one eligible stage. Useful for controlled orchestration.
-agentflow execute stage --workflow plan-review --task "Plan the account settings redesign"
+agentflow stage --workflow plan-review --task "Plan the account settings redesign"
 
 # Resume a session returned by an earlier command.
-agentflow execute continue <session-id>
+agentflow continue <session-id>
 
 # Inspect local session state or follow execution events.
 agentflow sessions
 agentflow watch <session-id>
 ```
 
-`execute start` and `execute continue` allow three failed stage attempts by
+`start` and `continue` allow three failed stage attempts by
 default; pass `--attempts N` to change that limit. Workflow results are printed
 as JSON on stdout, while progress is written to stderr.
 
 For workflows that declare `requires`, supply a completed prerequisite session:
 
 ```bash
-agentflow execute start implement --task "Build the approved plan" --prior <session-id>
+agentflow start implement --task "Build the approved plan" --prior <session-id>
 ```
 
 ## Run a role without a workflow
