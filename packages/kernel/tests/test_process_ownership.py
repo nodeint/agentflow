@@ -13,9 +13,9 @@ import unittest
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-if str(REPOSITORY_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPOSITORY_ROOT))
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_ROOT))
 
 from agentflow_kernel.command_executor import TERMINATION_GRACE_SEC
 from agentflow_kernel.process_ownership import (

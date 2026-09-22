@@ -20,7 +20,9 @@ uv run agentflow help
 ## Tests
 
 ```bash
-uv run python -m unittest discover -s tests -t . -p 'test_*.py'
+uv run python -m unittest discover -s packages/kernel/tests -t packages/kernel -p 'test_*.py'
+uv run python -m unittest discover -s packages/adapters/tests -t packages/adapters -p 'test_*.py'
+uv run python -m unittest discover -s packages/cli/tests -t packages/cli -p 'test_*.py'
 ```
 
 Rules: [tests/README.md](tests/README.md).

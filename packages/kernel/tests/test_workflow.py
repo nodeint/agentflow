@@ -3,9 +3,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-if str(REPOSITORY_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPOSITORY_ROOT))
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_ROOT))
 
 import tempfile
 import unittest
@@ -15,7 +15,7 @@ from agentflow_kernel.workflow import load_workflow_document
 
 class WorkflowDocumentTests(unittest.TestCase):
     def test_loads_repo_instructions_and_constraints(self) -> None:
-        workflows = REPOSITORY_ROOT / "tests" / "fixtures" / "workflows"
+        workflows = PACKAGE_ROOT / "tests" / "fixtures" / "workflows"
         review = load_workflow_document(workflows / "plan-review.yaml")
         implement = load_workflow_document(workflows / "plan-implement.yaml")
         self.assertEqual(

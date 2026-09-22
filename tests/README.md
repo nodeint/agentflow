@@ -1,14 +1,15 @@
 # Agentflow tests
 
-Rules for unittest files in this directory.
+Rules for unittest files.
 
 ## Layout
 
-- Tests must stay in this directory.
-- Each production module must map to at most one `test_<module>.py` file.
-- Shared fakes and workspace helpers must live in `support.py`.
+- Tests for a package live in `packages/<name>/tests/`, next to `src/`.
+- Each production module maps to one `test_<module>.py` inside that package.
+- Fakes and workspace helpers live in that package's `tests/support.py`.
 - A `test_*.py` module must not import another `test_*.py` module.
-- Production packages under `packages/` must not contain `test_*.py`.
+- A package test module must not import another package's `tests` modules.
+- `src/` must not contain `test_*.py`.
 - The runner must be stdlib `unittest`.
 
 ## Value
@@ -36,10 +37,12 @@ Keep High paths only: branching policy, guards, migrate/legacy, store deltas, re
 
 ## Verification
 
-From the repository root:
+From the repository root, one process per package:
 
 ```bash
-uv run python -m unittest discover -s tests -t . -p 'test_*.py'
+uv run python -m unittest discover -s packages/kernel/tests -t packages/kernel -p 'test_*.py'
+uv run python -m unittest discover -s packages/adapters/tests -t packages/adapters -p 'test_*.py'
+uv run python -m unittest discover -s packages/cli/tests -t packages/cli -p 'test_*.py'
 ```
 
 Touched tests must map to a production module and a High path.

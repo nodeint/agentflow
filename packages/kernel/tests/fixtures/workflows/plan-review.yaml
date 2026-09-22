@@ -1,0 +1,29 @@
+id: plan-review
+description: Write and approve a plan before implementation.
+stages:
+  - id: plan
+    role: planner
+    depends_on: []
+    produces:
+      artifact: plan.md
+  - id: review-plan
+    role: reviewer
+    depends_on:
+      - plan
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: plan
+completion:
+  stage: review-plan
+  decision: approved
+  outputs:
+    - name: plan
+      from_stage: plan
+      artifact: plan.md
+constraints:
+  - Do not write implementation code.
+  - Do not infer decisions from review prose.
