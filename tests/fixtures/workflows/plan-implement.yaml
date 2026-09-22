@@ -1,0 +1,73 @@
+id: plan-implement
+description: Implement and review production code, then write and review tests.
+
+stages:
+  - id: implement
+    role: developer
+    depends_on: []
+    instructions:
+      - Implement production code only.
+      - Do not add or modify test code.
+    produces:
+      artifact: implementation-result.md
+
+  - id: review-work
+    role: reviewer
+    depends_on:
+      - implement
+    instructions:
+      - Review production code only.
+      - Do not review test code.
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: write-tests
+        revise: implement
+
+  - id: write-tests
+    role: developer
+    session:
+      resume_from: implement
+    depends_on:
+      - implement
+      - review-work
+    instructions:
+      - Write or update test code only.
+      - Do not modify production code.
+      - Write only high-value tests for meaningful behavior, decision branches, failure boundaries, or regression risks.
+      - Do not add low-value tests for coverage alone, trivial implementation details, boilerplate, or duplicate assertions.
+    produces:
+      artifact: test-result.md
+
+  - id: review-tests
+    role: reviewer
+    session:
+      resume_from: review-work
+    depends_on:
+      - review-work
+      - write-tests
+    instructions:
+      - Review test code only.
+      - Verify relevant production behavior is covered.
+      - Verify each test protects meaningful behavior, decision branches, failure boundaries, or regression risks.
+      - Reject or require removal of low-value tests added only for coverage, trivial implementation details, boilerplate, or duplicate assertions.
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: write-tests
+
+completion:
+  stage: review-tests
+  decision: approved
+  outputs:
+    - name: implementation-result
+      from_stage: implement
+      artifact: implementation-result.md
+    - name: test-result
+      from_stage: write-tests
+      artifact: test-result.md

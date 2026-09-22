@@ -1,0 +1,47 @@
+version = 1
+revision = 3
+requires-python = ">=3.11"
+
+[manifest]
+members = [
+    "agentflow-adapters",
+    "agentflow-cli",
+    "agentflow-kernel",
+    "agentflow-workspace",
+]
+
+[[package]]
+name = "agentflow-adapters"
+version = "0.1.0"
+source = { editable = "packages/adapters" }
+dependencies = [
+    { name = "agentflow-kernel" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "agentflow-kernel", editable = "packages/kernel" }]
+
+[[package]]
+name = "agentflow-cli"
+version = "0.1.0"
+source = { editable = "packages/cli" }
+dependencies = [
+    { name = "agentflow-adapters" },
+    { name = "agentflow-kernel" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agentflow-adapters", editable = "packages/adapters" },
+    { name = "agentflow-kernel", editable = "packages/kernel" },
+]
+
+[[package]]
+name = "agentflow-kernel"
+version = "0.1.0"
+source = { editable = "packages/kernel" }
+
+[[package]]
+name = "agentflow-workspace"
+version = "0.0.0"
+source = { virtual = "." }

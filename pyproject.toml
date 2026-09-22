@@ -1,0 +1,17 @@
+[project]
+name = "agentflow-workspace"
+version = "0.0.0"
+description = "Agentflow runner workspace."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+agentflow-kernel = { workspace = true }
+agentflow-adapters = { workspace = true }
+agentflow-cli = { workspace = true }
