@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import json
 import os
 import signal
@@ -11,7 +10,17 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional, TextIO
 
+from rich_argparse import RichHelpFormatter
+
 from .coordinator import build_coordinator_command
+from .display import (
+    print_error,
+    print_help,
+    print_notice,
+    print_runs,
+    print_watch_event,
+    print_watch_snapshot,
+)
 from agentflow_kernel.config import (
     ConfigurationError,
     load_yaml_mapping,
@@ -28,13 +37,23 @@ from agentflow_kernel.session_store import SessionStore
 from .manual import render_help, topic_names
 
 
+def _command(subparsers: Any, name: str, help_text: str):
+    return subparsers.add_parser(
+        name, help=help_text, formatter_class=RichHelpFormatter
+    )
+
+
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Agentflow coordinator and workflow runner.")
+    parser = argparse.ArgumentParser(
+        prog="agentflow",
+        description="Agentflow coordinator and workflow runner.",
+        formatter_class=RichHelpFormatter,
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("run", help="Open an interactive coordinator session.")
-    subparsers.add_parser("runs", help="List workflow runs and their latest status.")
-    execute_parser = subparsers.add_parser(
-        "execute", help="Run a named workflow, or one eligible stage."
+    _command(subparsers, "run", "Open an interactive coordinator session.")
+    _command(subparsers, "runs", "List workflow runs and their latest status.")
+    execute_parser = _command(
+        subparsers, "execute", "Run a named workflow, or one eligible stage."
     )
     execute_parser.add_argument("--workflow-id")
     execute_parser.add_argument("--task")
@@ -53,8 +72,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=3,
         help="Maximum failed executions per stage id on the run. Default: 3.",
     )
-    agent_parser = subparsers.add_parser(
-        "agent", help="Dispatch a specialist role without a workflow file."
+    agent_parser = _command(
+        subparsers, "agent", "Dispatch a specialist role without a workflow file."
     )
     agent_parser.add_argument(
         "--role",
@@ -92,7 +111,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Read the prompt from stdin.",
     )
-    watch_parser = subparsers.add_parser("watch", help="Follow run events.")
+    watch_parser = _command(subparsers, "watch", "Follow run events.")
     watch_parser.add_argument("run_id", help="Run ID to observe.")
     watch_parser.add_argument(
         "--execution-id",
@@ -121,7 +140,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Exit after the selected execution becomes terminal. Requires --execution-id.",
     )
-    help_parser = subparsers.add_parser("help", help="Print Agentflow specification topics.")
+    help_parser = _command(subparsers, "help", "Print Agentflow specification topics.")
     help_parser.add_argument(
         "topic",
         nargs="?",
@@ -161,7 +180,7 @@ def resolve_prompt(args: argparse.Namespace) -> str:
 def main(argv: Optional[list[str]] = None, cwd: Optional[Path] = None) -> int:
     args = parse_args(argv)
     if args.command == "help":
-        print(render_help(args.topic), end="")
+        print_help(render_help(args.topic))
         return 0
     workspace = find_workspace((cwd or Path.cwd()).resolve())
     if args.command == "watch":
@@ -183,10 +202,9 @@ def main(argv: Optional[list[str]] = None, cwd: Optional[Path] = None) -> int:
     config = load_yaml_mapping(workspace / ".agentflow/config.yaml")
     coordinator = resolve_coordinator(config)
     command = build_coordinator_command(workspace, coordinator)
-    print(
-        f"[agentflow] Opening coordinator with {coordinator.provider}/{coordinator.model} "
-        f"(thinking: {coordinator.thinking}).",
-        file=sys.stderr,
+    print_notice(
+        f"Opening coordinator with {coordinator.provider}/{coordinator.model} "
+        f"(thinking: {coordinator.thinking})."
     )
     os.execvp(command[0], command)
     return 127
@@ -228,9 +246,9 @@ def watch_run(
         if json_lines:
             print(json.dumps(snapshot, ensure_ascii=False), flush=True)
         else:
-            _render_watch_snapshot(snapshot)
+            print_watch_snapshot(snapshot)
         return 0
-    print(f"[agentflow] Watching run {run_id}.", file=sys.stderr, flush=True)
+    print_notice(f"Watching run {run_id}.")
     previous_handlers = {
         signal.SIGINT: signal.signal(signal.SIGINT, raise_cancellation),
         signal.SIGTERM: signal.signal(signal.SIGTERM, raise_cancellation),
@@ -318,72 +336,7 @@ def _emit_watch_event(
     if json_lines:
         print(json.dumps(event, ensure_ascii=False), flush=True)
         return
-    _render_event(event)
-
-
-def _render_watch_snapshot(snapshot: Dict[str, Any]) -> None:
-    print(f"run_id: {snapshot.get('run_id') or '--'}", flush=True)
-    print(f"status: {snapshot.get('status') or 'unknown'}", flush=True)
-    workflow_id = snapshot.get("workflow_id")
-    if isinstance(workflow_id, str) and workflow_id:
-        print(f"workflow: {workflow_id}", flush=True)
-    task = snapshot.get("task")
-    if isinstance(task, str) and task:
-        print(f"task: {task}", flush=True)
-    execution_id = snapshot.get("execution_id")
-    execution_status = snapshot.get("execution_status") or snapshot.get(
-        "latest_execution_status"
-    )
-    if isinstance(execution_id, str) and execution_id:
-        suffix = (
-            f" · {execution_status}"
-            if isinstance(execution_status, str) and execution_status
-            else ""
-        )
-        print(f"execution: {execution_id}{suffix}", flush=True)
-    outcome = snapshot.get("outcome")
-    if isinstance(outcome, dict) and isinstance(outcome.get("status"), str):
-        print(f"outcome: {outcome['status']}", flush=True)
-        decision = outcome.get("decision")
-        if isinstance(decision, str) and decision:
-            print(f"decision: {decision}", flush=True)
-    print(f"updated_at: {_format_watch_timestamp(snapshot.get('updated_at'))}", flush=True)
-    outputs = snapshot.get("outputs")
-    if isinstance(outputs, dict) and outputs:
-        print(f"outputs: {', '.join(outputs)}", flush=True)
-    else:
-        print("outputs: none", flush=True)
-    print(f"events_cursor: {snapshot.get('events_cursor', 0)}", flush=True)
-
-
-def _format_watch_timestamp(timestamp: Any) -> str:
-    if not isinstance(timestamp, str) or not timestamp.strip():
-        return "--"
-    text = timestamp.strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return timestamp.strip()
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.isoformat(sep=" ", timespec="seconds")
-
-
-def _render_event(event: Dict[str, Any]) -> None:
-    event_name = event.get("event")
-    stage_id = event.get("stage_id")
-    timestamp = event.get("timestamp")
-    if not isinstance(event_name, str) or not isinstance(stage_id, str):
-        return
-    time_label = _format_watch_timestamp(timestamp)
-    summary = event.get("summary")
-    suffix = f" · {summary}" if isinstance(summary, str) and summary else ""
-    print(
-        f"[{time_label}] {stage_id} · {event_name.removeprefix('provider.').replace('_', ' ')}{suffix}",
-        flush=True,
-    )
+    print_watch_event(event)
 
 
 def execute_workflow(
@@ -433,11 +386,9 @@ def dispatch_agent(
         task=args.task,
     )
     thinking_label = target.thinking or "default"
-    print(
-        f"[agentflow] agent {args.role} · {target.provider}/{target.model} "
-        f"(thinking: {thinking_label}).",
-        file=sys.stderr,
-        flush=True,
+    print_notice(
+        f"agent {args.role} · {target.provider}/{target.model} "
+        f"(thinking: {thinking_label})."
     )
     previous_handlers = {
         signal.SIGINT: signal.signal(signal.SIGINT, raise_cancellation),
@@ -458,13 +409,13 @@ def dispatch_agent(
         log(str(exc))
         return 130
     except ValueError as exc:
-        print(f"agentflow: {exc}", file=sys.stderr)
+        print_error(str(exc))
         return 2
     finally:
         for signal_number, previous_handler in previous_handlers.items():
             signal.signal(signal_number, previous_handler)
     if created_run:
-        print(f"[agentflow] run_id: {result['run_id']}", file=sys.stderr, flush=True)
+        print_notice(f"run_id: {result['run_id']}")
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
@@ -494,14 +445,7 @@ def _resolve_agent_run_id(
 
 
 def list_runs(workspace: Path) -> int:
-    for _, run_id, workflow_id, status, execution_id, decision, outputs, task in list_run_rows(
-        workspace
-    ):
-        task_suffix = f" · {task}" if task else ""
-        print(
-            f"{run_id} · {workflow_id} · {status} · {execution_id} · "
-            f"{decision} · {outputs}{task_suffix}"
-        )
+    print_runs(list_run_rows(workspace))
     return 0
 
 
@@ -509,7 +453,7 @@ def console_main(argv: Optional[list[str]] = None) -> None:
     try:
         raise SystemExit(main(argv))
     except ConfigurationError as exc:
-        print(f"agentflow: {exc}", file=sys.stderr)
+        print_error(str(exc))
         raise SystemExit(2) from exc
 
 

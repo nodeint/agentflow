@@ -81,10 +81,11 @@ class WatchCommandTests(unittest.TestCase):
             with patch("sys.stdout", stdout):
                 self.assertEqual(watch_run(workspace, "run-1", once=True), 0)
         output = stdout.getvalue()
-        self.assertIn("run_id: run-1", output)
-        self.assertIn("status: active", output)
-        self.assertIn("events_cursor:", output)
+        self.assertIn("run-1", output)
+        self.assertIn("active", output)
+        self.assertIn("events_cursor", output)
         self.assertNotIn("heartbeat", output)
+        self.assertNotIn("running for 30s", output)
 
     def test_until_terminal_reads_execution_json_not_run_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -175,14 +176,13 @@ class ListRunsTests(unittest.TestCase):
                 self.assertEqual(list_runs(workspace), 0)
             text = stdout.getvalue()
             self.assertLess(text.index("newer"), text.index("older"))
-            self.assertIn(
-                "newer · plan-implement · active · not started · -- · none · new task",
-                text,
-            )
-            self.assertIn(
-                "older · plan-review · completed · 0001 · approved · plan · old task",
-                text,
-            )
+            self.assertIn("plan-implement", text)
+            self.assertIn("not started", text)
+            self.assertIn("new task", text)
+            self.assertIn("plan-review", text)
+            self.assertIn("0001", text)
+            self.assertIn("approved", text)
+            self.assertIn("old task", text)
             self.assertNotIn("broken", text)
 
 
