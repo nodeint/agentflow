@@ -15,8 +15,9 @@ from rich_argparse import RichHelpFormatter
 from .coordinator import build_coordinator_command
 from .display import (
     print_error,
-    print_help,
+    print_manual,
     print_notice,
+    print_agent,
     print_runs,
     print_watch_event,
     print_watch_snapshot,
@@ -34,126 +35,362 @@ from agentflow_kernel.query import list_run_rows, read_execution_file, watch_sna
 from agentflow_kernel.run_records import create_agent_run, require_agent_run
 from agentflow_kernel.runtime import log
 from agentflow_kernel.session_store import SessionStore
-from .manual import render_help, topic_names
+from .manual import render_manual, topic_names
 
 
-def _command(subparsers: Any, name: str, help_text: str):
-    return subparsers.add_parser(
-        name, help=help_text, formatter_class=RichHelpFormatter
-    )
-
-
-def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="agentflow",
-        description="Agentflow coordinator and workflow runner.",
+def _command(
+    subparsers: Any,
+    commands: Dict[str, argparse.ArgumentParser],
+    name: str,
+    help_text: str,
+    *,
+    description: Optional[str] = None,
+    aliases: tuple[str, ...] = (),
+    alias_map: Optional[Dict[str, str]] = None,
+) -> argparse.ArgumentParser:
+    command = subparsers.add_parser(
+        name,
+        aliases=list(aliases),
+        help=help_text,
+        description=description,
         formatter_class=RichHelpFormatter,
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    _command(subparsers, "run", "Open an interactive coordinator session.")
-    _command(subparsers, "runs", "List workflow runs and their latest status.")
-    execute_parser = _command(
-        subparsers, "execute", "Run a named workflow, or one eligible stage."
+    commands[name] = command
+    for alias in aliases:
+        commands[alias] = command
+        if alias_map is not None:
+            alias_map[alias] = name
+    return command
+
+
+def _add_prior(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--prior",
+        dest="prior_run_id",
+        metavar="RUN",
+        help=(
+            "Completed run whose workflow and decision match requires. "
+            "Required on create when the workflow declares requires."
+        ),
     )
-    execute_parser.add_argument("--workflow-id")
-    execute_parser.add_argument("--task")
-    execute_parser.add_argument("--run-id")
-    execute_parser.add_argument(
-        "--stage-id",
-        help="Dispatch this eligible stage once, then stop.",
-    )
-    execute_parser.add_argument(
-        "--prior-run-id",
-        help="Completed required workflow run; required when the workflow declares requires.",
-    )
-    execute_parser.add_argument(
-        "--max-attempts",
+
+
+def _add_attempts(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--attempts",
+        dest="max_attempts",
         type=int,
         default=3,
-        help="Maximum failed executions per stage id on the run. Default: 3.",
+        metavar="N",
+        help="Failed executions allowed for one stage. Default: 3.",
     )
-    agent_parser = _command(
-        subparsers, "agent", "Dispatch a specialist role without a workflow file."
-    )
-    agent_parser.add_argument(
+
+
+def _add_agent_role(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "--role",
         required=True,
-        help="Role key from .agentflow/config.yaml roles.<key>.",
+        metavar="ROLE",
+        help="Key under roles in .agentflow/config.yaml. The key must exist.",
     )
-    agent_parser.add_argument(
-        "--task",
-        help="Label stored on a new run; default is the role key.",
-    )
-    agent_parser.add_argument("--run-id")
-    agent_parser.add_argument(
+
+
+def _add_agent_model(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "--provider",
-        help="Override the provider resolved from the role and config.",
+        help="Provider for this role. Pass with --model, or omit both.",
     )
-    agent_parser.add_argument(
+    parser.add_argument(
         "--model",
-        help="Override the native model resolved from the role and config.",
+        help="Native model id for this role. Pass with --provider, or omit both.",
     )
-    agent_parser.add_argument(
+    parser.add_argument(
         "--thinking",
-        help="Override the thinking level resolved from the role and config.",
+        help=(
+            "Thinking level. Checked against the model allow-list unless "
+            "--provider and --model are both set."
+        ),
     )
-    agent_parser.add_argument(
-        "--runner-session-id",
-        "--session-id",
-        dest="runner_session_id",
-        help="Existing runner session ID; --session-id is a legacy alias.",
-    )
-    agent_prompt = agent_parser.add_mutually_exclusive_group(required=True)
-    agent_prompt.add_argument("--prompt")
-    agent_prompt.add_argument("--prompt-file")
-    agent_prompt.add_argument(
-        "--prompt-stdin",
+
+
+def _add_agent_prompt(parser: argparse.ArgumentParser) -> None:
+    prompt = parser.add_mutually_exclusive_group(required=True)
+    prompt.add_argument("--prompt", help="Prompt text.")
+    prompt.add_argument("--file", dest="prompt_file", metavar="PATH", help="Read the prompt from this file.")
+    prompt.add_argument(
+        "--stdin",
+        dest="prompt_stdin",
         action="store_true",
         help="Read the prompt from stdin.",
     )
-    watch_parser = _command(subparsers, "watch", "Follow run events.")
-    watch_parser.add_argument("run_id", help="Run ID to observe.")
+
+
+def _build_parser() -> tuple[
+    argparse.ArgumentParser, Dict[str, argparse.ArgumentParser], Dict[str, str]
+]:
+    parser = argparse.ArgumentParser(
+        prog="agentflow",
+        description="Run named workflows and standalone roles from .agentflow/.",
+        epilog="Command usage: agentflow help <command>. Specification: agentflow man.",
+        formatter_class=RichHelpFormatter,
+    )
+    subparsers = parser.add_subparsers(dest="command", required=False)
+    commands: Dict[str, argparse.ArgumentParser] = {}
+    alias_map: Dict[str, str] = {}
+    _command(
+        subparsers,
+        commands,
+        "coordinator",
+        "Start the interactive coordinator.",
+        description=(
+            "Replace this process with the coordinator selected by "
+            "runtime.coordinator. The coordinator is not a workflow role. "
+            "See 'agentflow man config'."
+        ),
+    )
+    runs_parser = _command(
+        subparsers,
+        commands,
+        "runs",
+        "List runs and their latest status.",
+        description=(
+            "List runs under .agentflow/runs/, newest first. "
+            "Columns are run, workflow, status, latest execution, "
+            "latest decision, published outputs, and task."
+        ),
+    )
+    runs_parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="Print the same rows as a JSON array.",
+    )
+    execute_parser = _command(
+        subparsers,
+        commands,
+        "execute",
+        "Run a named workflow.",
+        description=(
+            "start creates a run and continues until it stops. "
+            "continue resumes a run until it stops. "
+            "stage dispatches the next eligible stage once. "
+            "See 'agentflow man execute'."
+        ),
+    )
+    execute_subs = execute_parser.add_subparsers(dest="execute_action", required=True)
+    start_parser = execute_subs.add_parser(
+        "start",
+        help="Create a run and continue until it stops.",
+        formatter_class=RichHelpFormatter,
+    )
+    start_parser.add_argument("workflow", metavar="WORKFLOW", help="Workflow id.")
+    start_parser.add_argument(
+        "--task", required=True, help="Task recorded on the new run."
+    )
+    _add_prior(start_parser)
+    _add_attempts(start_parser)
+    continue_parser = execute_subs.add_parser(
+        "continue",
+        help="Resume a run until it stops.",
+        formatter_class=RichHelpFormatter,
+    )
+    continue_parser.add_argument("run", metavar="RUN", help="Run to resume.")
+    _add_prior(continue_parser)
+    _add_attempts(continue_parser)
+    stage_parser = execute_subs.add_parser(
+        "stage",
+        help="Dispatch the next eligible stage once.",
+        formatter_class=RichHelpFormatter,
+    )
+    stage_parser.add_argument(
+        "run",
+        nargs="?",
+        metavar="RUN",
+        help="Run to advance. Omit when passing --workflow.",
+    )
+    stage_parser.add_argument(
+        "--workflow",
+        help="Workflow id. Creates a run and dispatches its next stage once.",
+    )
+    stage_parser.add_argument(
+        "--task",
+        help="Task recorded on the new run. Required with --workflow.",
+    )
+    _add_prior(stage_parser)
+    agent_flags = argparse.ArgumentParser(add_help=False)
+    agent_flags.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the result as one JSON object.",
+    )
+    agent_parser = _command(
+        subparsers,
+        commands,
+        "agent",
+        "Run one role outside a workflow.",
+        description=(
+            "start creates an agent run. continue appends a turn to RUN. "
+            "--role is always checked against .agentflow/config.yaml. "
+            "--provider and --model together replace that role's model. "
+            "See 'agentflow man agent'."
+        ),
+    )
+    agent_subs = agent_parser.add_subparsers(dest="agent_action", required=True)
+    agent_start = agent_subs.add_parser(
+        "start",
+        help="Create an agent run and dispatch one turn.",
+        parents=[agent_flags],
+        formatter_class=RichHelpFormatter,
+    )
+    _add_agent_role(agent_start)
+    agent_start.add_argument(
+        "--task",
+        help="Label stored on the new run. Defaults to the role key.",
+    )
+    _add_agent_model(agent_start)
+    _add_agent_prompt(agent_start)
+    agent_continue = agent_subs.add_parser(
+        "continue",
+        help="Append a turn to an agent run.",
+        parents=[agent_flags],
+        formatter_class=RichHelpFormatter,
+    )
+    agent_continue.add_argument("run", metavar="RUN", help="Agent run to continue.")
+    _add_agent_role(agent_continue)
+    _add_agent_model(agent_continue)
+    agent_continue.add_argument(
+        "--session",
+        dest="runner_session_id",
+        metavar="ID",
+        help="Runner session to continue on this run.",
+    )
+    _add_agent_prompt(agent_continue)
+    watch_parser = _command(
+        subparsers,
+        commands,
+        "watch",
+        "Follow events for a run.",
+        description=(
+            "With no --cursor, print the current snapshot and follow new events. "
+            "--cursor BYTE replays from that offset, including 0 for the whole log. "
+            "--once --json prints one snapshot object. "
+            "Follow --json prints events as JSON lines. "
+            "See 'agentflow man watch'."
+        ),
+    )
+    watch_parser.usage = (
+        "agentflow watch RUN --once [--json]\n"
+        "       agentflow watch RUN [--json] [--cursor BYTE] [--execution ID] [--until]"
+    )
+    watch_parser.add_argument("run_id", metavar="RUN", help="Run to follow.")
     watch_parser.add_argument(
-        "--execution-id",
-        help="Filter events to one execution.",
+        "--execution",
+        dest="execution_id",
+        metavar="ID",
+        help=(
+            "Limit followed events and --until to this execution. "
+            "With --once, show this execution in the snapshot."
+        ),
     )
     watch_parser.add_argument(
         "--json",
         dest="json_lines",
         action="store_true",
-        help="Print a snapshot object with --once, or events as JSONL when following.",
+        help="With --once, print one JSON snapshot. While following, print JSON lines.",
     )
     watch_parser.add_argument(
         "--cursor",
         type=int,
         metavar="BYTE",
-        help="Follow events after this byte offset from a prior --once snapshot.",
+        help="Replay events.jsonl from this byte offset. 0 replays the whole log.",
     )
     watch_mode = watch_parser.add_mutually_exclusive_group()
     watch_mode.add_argument(
         "--once",
         action="store_true",
-        help="Print the current run snapshot and events cursor, then exit.",
+        help="Print the snapshot and events cursor, then exit. Cannot be combined with --cursor.",
     )
     watch_mode.add_argument(
-        "--until-terminal",
+        "--until",
+        dest="until_terminal",
         action="store_true",
-        help="Exit after the selected execution becomes terminal. Requires --execution-id.",
+        help="Exit when --execution reaches completed, failed, or cancelled. Requires --execution.",
     )
-    help_parser = _command(subparsers, "help", "Print Agentflow specification topics.")
+    help_parser = _command(
+        subparsers,
+        commands,
+        "help",
+        "Show usage for a command.",
+        description="Show usage for agentflow, or for one command. Same text as --help.",
+    )
+    manual_parser = _command(
+        subparsers,
+        commands,
+        "manual",
+        "Show a specification topic.",
+        description="Show one specification topic. With no topic, show the index.",
+        aliases=("man",),
+        alias_map=alias_map,
+    )
+    manual_parser.prog = "agentflow manual (man)"
     help_parser.add_argument(
+        "command_name",
+        nargs="?",
+        metavar="command",
+        choices=tuple(commands),
+        help="Command to describe. Omit to list every command.",
+    )
+    manual_parser.add_argument(
         "topic",
         nargs="?",
-        help=f"One of: {', '.join(topic_names())}.",
+        metavar="topic",
+        choices=topic_names(),
+        help=f"Topic to show: {', '.join(topic_names())}. Omit to show the index.",
     )
+    return parser, commands, alias_map
+
+
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    parser, commands, alias_map = _build_parser()
     args = parser.parse_args(argv)
+    args.command = alias_map.get(args.command, args.command)
+    if args.command == "execute":
+        _reject_execute_shape(commands["execute"], args)
+    if args.command == "agent":
+        _reject_agent_shape(commands["agent"], args)
+    watch_parser = commands["watch"]
     if args.command == "watch" and args.until_terminal and not args.execution_id:
-        watch_parser.error("--until-terminal requires --execution-id")
+        watch_parser.error("--until requires --execution")
     if args.command == "watch" and args.cursor is not None and args.cursor < 0:
         watch_parser.error("--cursor must be >= 0")
     if args.command == "watch" and args.once and args.cursor is not None:
         watch_parser.error("--once cannot be combined with --cursor")
     return args
+
+
+def _reject_execute_shape(command: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if args.execute_action != "stage":
+        return
+    has_run = isinstance(args.run, str) and bool(args.run.strip())
+    has_workflow = isinstance(args.workflow, str) and bool(args.workflow.strip())
+    has_task = isinstance(args.task, str) and bool(args.task.strip())
+    if has_run and (has_workflow or has_task):
+        command.error("Pass RUN, or --workflow and --task, not both.")
+    if not has_run and not (has_workflow and has_task):
+        command.error("Pass RUN, or both --workflow and --task.")
+
+
+def _reject_agent_shape(command: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if (args.provider is None) != (args.model is None):
+        command.error("Pass both --provider and --model, or omit both.")
+
+
+def print_usage(command: Optional[str] = None) -> None:
+    parser, commands, _alias_map = _build_parser()
+    if command is None:
+        parser.print_help()
+        return
+    commands[command].print_help()
 
 
 def find_workspace(start: Path) -> Path:
@@ -179,8 +416,14 @@ def resolve_prompt(args: argparse.Namespace) -> str:
 
 def main(argv: Optional[list[str]] = None, cwd: Optional[Path] = None) -> int:
     args = parse_args(argv)
+    if args.command is None:
+        print_usage()
+        return 0
     if args.command == "help":
-        print_help(render_help(args.topic))
+        print_usage(args.command_name)
+        return 0
+    if args.command == "manual":
+        print_manual(render_manual(args.topic))
         return 0
     workspace = find_workspace((cwd or Path.cwd()).resolve())
     if args.command == "watch":
@@ -194,11 +437,13 @@ def main(argv: Optional[list[str]] = None, cwd: Optional[Path] = None) -> int:
             cursor=args.cursor,
         )
     if args.command == "runs":
-        return list_runs(workspace)
+        return list_runs(workspace, as_json=args.as_json)
     if args.command == "execute":
         return execute_workflow(workspace, args)
     if args.command == "agent":
         return dispatch_agent(workspace, args)
+    if args.command != "coordinator":
+        raise ConfigurationError(f"Unknown command {args.command!r}.")
     config = load_yaml_mapping(workspace / ".agentflow/config.yaml")
     coordinator = resolve_coordinator(config)
     command = build_coordinator_command(workspace, coordinator)
@@ -224,11 +469,11 @@ def watch_run(
     cursor: Optional[int] = None,
 ) -> int:
     if once and until_terminal:
-        raise ConfigurationError("--once cannot be combined with --until-terminal.")
+        raise ConfigurationError("--once cannot be combined with --until.")
     if once and cursor is not None:
         raise ConfigurationError("--once cannot be combined with --cursor.")
     if until_terminal and not execution_id:
-        raise ConfigurationError("--until-terminal requires --execution-id.")
+        raise ConfigurationError("--until requires --execution.")
     if cursor is not None and cursor < 0:
         raise ConfigurationError("--cursor must be >= 0.")
     run_directory = workspace / ".agentflow" / "runs" / run_id
@@ -242,12 +487,12 @@ def watch_run(
         if not execution_path.is_file():
             raise ConfigurationError(f"No execution found: {execution_id}")
     if once:
-        snapshot = watch_snapshot(run_directory, execution_id=execution_id)
-        if json_lines:
-            print(json.dumps(snapshot, ensure_ascii=False), flush=True)
-        else:
-            print_watch_snapshot(snapshot)
+        _print_watch_snapshot(run_directory, execution_id, json_lines)
         return 0
+    follow_cursor = cursor
+    if follow_cursor is None:
+        snapshot = _print_watch_snapshot(run_directory, execution_id, json_lines)
+        follow_cursor = int(snapshot.get("events_cursor") or 0)
     print_notice(f"Watching run {run_id}.")
     previous_handlers = {
         signal.SIGINT: signal.signal(signal.SIGINT, raise_cancellation),
@@ -255,8 +500,7 @@ def watch_run(
     }
     try:
         with events_path.open("r", encoding="utf-8") as events_file:
-            if cursor is not None:
-                events_file.seek(cursor)
+            events_file.seek(follow_cursor)
             pending = ""
             while True:
                 lines, pending = _read_complete_event_lines(events_file, pending)
@@ -344,25 +588,28 @@ def execute_workflow(
     args: argparse.Namespace,
     runner: Optional[AgentToolRunner] = None,
 ) -> int:
+    once = args.execute_action == "stage"
+    creating = args.execute_action == "start" or (
+        once and not _text(getattr(args, "run", None))
+    )
     return execute_named_workflow(
         workspace,
         ExecuteRequest(
-            workflow_id=getattr(args, "workflow_id", None),
-            task=getattr(args, "task", None),
-            run_id=getattr(args, "run_id", None),
-            stage_id=_requested_stage_id(args),
+            workflow_id=getattr(args, "workflow", None) if creating else None,
+            task=getattr(args, "task", None) if creating else None,
+            run_id=None if creating else getattr(args, "run", None),
             prior_run_id=getattr(args, "prior_run_id", None),
-            max_attempts=getattr(args, "max_attempts", 3),
+            max_attempts=None if once else getattr(args, "max_attempts", 3),
+            once=once,
         ),
         runner=runner,
     )
 
 
-def _requested_stage_id(args: argparse.Namespace) -> Optional[str]:
-    stage_id = getattr(args, "stage_id", None)
-    if not isinstance(stage_id, str):
+def _text(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
         return None
-    stripped = stage_id.strip()
+    stripped = value.strip()
     return stripped or None
 
 
@@ -380,10 +627,10 @@ def dispatch_agent(
     )
     run_id, created_run = _resolve_agent_run_id(
         workspace,
-        run_id=args.run_id,
-        runner_session_id=args.runner_session_id,
+        run_id=None if args.agent_action == "start" else args.run,
+        runner_session_id=getattr(args, "runner_session_id", None),
         role=args.role,
-        task=args.task,
+        task=getattr(args, "task", None),
     )
     thinking_label = target.thinking or "default"
     print_notice(
@@ -401,7 +648,7 @@ def dispatch_agent(
             thinking=target.thinking,
             prompt=resolve_prompt(args),
             workspace=str(workspace),
-            runner_session_id=args.runner_session_id,
+            runner_session_id=getattr(args, "runner_session_id", None),
             run_id=run_id,
             stage_id=args.role,
         )
@@ -416,7 +663,12 @@ def dispatch_agent(
             signal.signal(signal_number, previous_handler)
     if created_run:
         print_notice(f"run_id: {result['run_id']}")
-    print(json.dumps(result, ensure_ascii=False))
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        print_agent(result, role=args.role, provider=target.provider, model=target.model)
+    if result.get("outcome_status") != "complete":
+        return 1
     return 0
 
 
@@ -427,26 +679,53 @@ def _resolve_agent_run_id(
     role: str,
     task: Optional[str],
 ) -> tuple[str, bool]:
-    session_run_id = None
-    if runner_session_id:
+    if runner_session_id and not run_id:
+        raise ConfigurationError("--session requires a run.")
+    if run_id is not None and isinstance(task, str) and task.strip():
+        raise ConfigurationError("--task cannot be combined with a run.")
+    if run_id is not None and runner_session_id:
         previous = SessionStore(workspace).latest_execution(runner_session_id)
-        if previous is not None:
-            session_run_id = previous.run_id
-    if run_id is not None and session_run_id is not None and run_id != session_run_id:
-        raise ConfigurationError(
-            f"--run-id {run_id} does not match runner session run {session_run_id}."
-        )
-    chosen = run_id if run_id is not None else session_run_id
-    if chosen is not None:
-        require_agent_run(workspace, chosen)
-        return chosen, False
+        if previous is not None and previous.run_id != run_id:
+            raise ConfigurationError(
+                f"Run {run_id} does not match runner session run {previous.run_id}."
+            )
+    if run_id is not None:
+        require_agent_run(workspace, run_id)
+        return run_id, False
     task_summary = (task if task is not None else role).strip()
     return create_agent_run(workspace, role, task_summary), True
 
 
-def list_runs(workspace: Path) -> int:
-    print_runs(list_run_rows(workspace))
+def list_runs(workspace: Path, *, as_json: bool = False) -> int:
+    rows = list_run_rows(workspace)
+    if as_json:
+        payload = [
+            {
+                "run": run_id,
+                "workflow": workflow_id,
+                "status": status,
+                "execution": execution_id,
+                "decision": decision,
+                "outputs": outputs,
+                "task": task,
+            }
+            for _, run_id, workflow_id, status, execution_id, decision, outputs, task in rows
+        ]
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
+    print_runs(rows)
     return 0
+
+
+def _print_watch_snapshot(
+    run_directory: Path, execution_id: Optional[str], json_lines: bool
+) -> dict[str, Any]:
+    snapshot = watch_snapshot(run_directory, execution_id=execution_id)
+    if json_lines:
+        print(json.dumps(snapshot, ensure_ascii=False), flush=True)
+    else:
+        print_watch_snapshot(snapshot)
+    return snapshot
 
 
 def console_main(argv: Optional[list[str]] = None) -> None:

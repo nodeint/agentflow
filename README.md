@@ -6,7 +6,7 @@ Coordinator and workflow runner. The workspace has three packages:
 | :--- | :--- | :--- |
 | `packages/kernel` | `agentflow_kernel` | Workflow selection, execute, run records, and the session store. |
 | `packages/adapters` | `agentflow_adapters` | Headless `grok` and `codex` CLIs. |
-| `packages/cli` | `agentflow_cli` | `agentflow` command, help text, and the interactive coordinator. |
+| `packages/cli` | `agentflow_cli` | `agentflow` command, usage help, the manual, and the interactive coordinator. |
 
 A project keeps its own `.agentflow/` config, workflows, and runs. This repository does not.
 
@@ -16,6 +16,8 @@ A project keeps its own `.agentflow/` config, workflows, and runs. This reposito
 uv sync --all-packages
 uv run agentflow help
 ```
+
+`agentflow help` prints command usage. `agentflow help <command>` prints one command. `agentflow man` prints a specification topic.
 
 ## Tests
 

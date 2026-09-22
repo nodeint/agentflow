@@ -116,7 +116,7 @@ class PriorRunTests(unittest.TestCase):
         workflow = _workflow()
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
-            with self.assertRaisesRegex(ConfigurationError, "pass --prior-run-id"):
+            with self.assertRaisesRegex(ConfigurationError, "pass --prior"):
                 resolve_prior_run_id(workspace, workflow, None)
             with self.assertRaisesRegex(ConfigurationError, "Required run not found"):
                 resolve_prior_run_id(workspace, workflow, "missing")

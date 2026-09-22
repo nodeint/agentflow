@@ -154,13 +154,13 @@ def resolve_prior_run_id(
     if workflow.requires is None:
         if prior_run_id:
             raise ConfigurationError(
-                "Workflow does not declare requires; omit --prior-run-id."
+                "Workflow does not declare requires; omit --prior."
             )
         return None
     if not prior_run_id:
         raise ConfigurationError(
             f"Workflow {workflow.id} requires completed {workflow.requires.workflow} "
-            f"({workflow.requires.decision}); pass --prior-run-id."
+            f"({workflow.requires.decision}); pass --prior."
         )
     status = read_status_file(
         workspace / ".agentflow" / "runs" / prior_run_id / "status.json"
@@ -169,17 +169,17 @@ def resolve_prior_run_id(
         raise ConfigurationError(f"Required run not found: {prior_run_id}.")
     if status.get("workflow_id") != workflow.requires.workflow:
         raise ConfigurationError(
-            f"--prior-run-id {prior_run_id} is workflow {status.get('workflow_id')!r}, "
+            f"--prior {prior_run_id} is workflow {status.get('workflow_id')!r}, "
             f"not {workflow.requires.workflow!r}."
         )
     if status.get("status") != "completed":
         raise ConfigurationError(
-            f"--prior-run-id {prior_run_id} is {status.get('status')}, not completed."
+            f"--prior {prior_run_id} is {status.get('status')}, not completed."
         )
     decision = status.get("latest_decision")
     if decision != workflow.requires.decision:
         raise ConfigurationError(
-            f"--prior-run-id {prior_run_id} decision is {decision!r}, "
+            f"--prior {prior_run_id} decision is {decision!r}, "
             f"not {workflow.requires.decision!r}."
         )
     return prior_run_id
@@ -196,7 +196,7 @@ def bind_prior_run_id(
     stored = status.get("prior_run_id")
     if stored != prior_run_id:
         raise ConfigurationError(
-            f"--prior-run-id {prior_run_id} does not match run {stored}."
+            f"--prior {prior_run_id} does not match run {stored}."
         )
 
 

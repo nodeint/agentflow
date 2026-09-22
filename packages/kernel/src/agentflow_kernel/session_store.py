@@ -136,7 +136,7 @@ class SessionStore:
             and previous_context.run_id != run_id
         ):
             raise ValueError(
-                f"--run-id {run_id} does not match runner session run {previous_context.run_id}."
+                f"Run {run_id} does not match runner session run {previous_context.run_id}."
             )
         resolved_run_id = run_id or (
             previous_context.run_id if previous_context is not None else None

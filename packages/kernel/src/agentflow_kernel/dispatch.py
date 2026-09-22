@@ -163,7 +163,7 @@ def resolve_resume_session(
         )
     if requested and requested != latest.runner_session_id:
         raise ConfigurationError(
-            f"--runner-session-id {requested} does not match "
+            f"Session {requested} does not match "
             f"{stage.resume_from} session {latest.runner_session_id}."
         )
     return latest.runner_session_id

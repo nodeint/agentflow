@@ -17,7 +17,7 @@ from unittest.mock import patch
 from agentflow_kernel.config import ConfigurationError
 from agentflow_kernel.agent_runner import AgentToolRunner
 from agentflow_kernel.query import list_run_rows
-from agentflow_cli.run import execute_workflow, list_runs, parse_args, watch_run
+from agentflow_cli.run import execute_workflow, list_runs, main, parse_args, watch_run
 from tests.support import (
     ScriptedAdapter,
     repo_workflow_text,
@@ -125,10 +125,14 @@ def _run_execute(
             args,
             runner=AgentToolRunner(adapters={"fake": adapter}, timeout_sec=10),
         )
-    objects = [
-        json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()
-    ]
-    return code, objects
+    payload = json.loads(stdout.getvalue())
+    summary = {
+        "run_id": payload["run_id"],
+        "run_status": payload["run_status"],
+        "stop_reason": payload["stop_reason"],
+        "outputs": payload["outputs"],
+    }
+    return code, [*payload["stages"], summary]
 
 
 class ListRunsTests(unittest.TestCase):
@@ -184,6 +188,12 @@ class ListRunsTests(unittest.TestCase):
             self.assertIn("approved", text)
             self.assertIn("old task", text)
             self.assertNotIn("broken", text)
+            json_out = io.StringIO()
+            with patch("sys.stdout", json_out):
+                self.assertEqual(list_runs(workspace, as_json=True), 0)
+            rows = json.loads(json_out.getvalue())
+            self.assertEqual([row["run"] for row in rows], ["newer", "older"])
+            self.assertEqual(rows[1]["decision"], "approved")
 
 
 class ExecuteWorkflowTests(unittest.TestCase):
@@ -200,7 +210,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         )
         code, objects = _run_execute(
             workspace,
-            ["--workflow-id", "plan-review", "--task", "Write a plan"],
+            ["start", "plan-review", "--task", "Write a plan"],
             adapter,
         )
         self.assertEqual(code, 0)
@@ -235,7 +245,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         )
         code, objects = _run_execute(
             workspace,
-            ["--workflow-id", "plan-review", "--task", "Write a plan"],
+            ["start", "plan-review", "--task", "Write a plan"],
             adapter,
         )
         self.assertEqual(code, 0)
@@ -256,29 +266,28 @@ class ExecuteWorkflowTests(unittest.TestCase):
                 "plan-implement": requiring,
             }
         )
-        with self.assertRaisesRegex(ConfigurationError, "pass --prior-run-id"):
+        with self.assertRaisesRegex(ConfigurationError, "pass --prior"):
             _run_execute(
                 workspace,
-                ["--workflow-id", "plan-implement", "--task", "Do work"],
+                ["start", "plan-implement", "--task", "Do work"],
                 ScriptedAdapter(["status: complete\n\nx"], artifacts=["# x\n"]),
             )
-        with self.assertRaisesRegex(ConfigurationError, "pass --prior-run-id"):
+        with self.assertRaisesRegex(ConfigurationError, "pass --prior"):
             _run_execute(
                 workspace,
                 [
-                    "--workflow-id",
+                    "stage",
+                    "--workflow",
                     "plan-implement",
                     "--task",
                     "Do work",
-                    "--stage-id",
-                    "write-tests",
                 ],
                 ScriptedAdapter(["status: complete\n\nx"], artifacts=["# x\n"]),
             )
         self.assertFalse((workspace / ".agentflow" / "runs").exists())
         prior_code, prior_objects = _run_execute(
             workspace,
-            ["--workflow-id", "plan-review", "--task", "Write a plan"],
+            ["start", "plan-review", "--task", "Write a plan"],
             ScriptedAdapter(
                 [
                     "status: complete\n\nplanned",
@@ -301,11 +310,11 @@ class ExecuteWorkflowTests(unittest.TestCase):
         code, objects = _run_execute(
             workspace,
             [
-                "--workflow-id",
+                "start",
                 "plan-implement",
                 "--task",
                 "Do work",
-                "--prior-run-id",
+                "--prior",
                 prior_id,
             ],
             adapter,
@@ -330,7 +339,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         )
         code, objects = _run_execute(
             workspace,
-            ["--workflow-id", "plan-review", "--task", "Write a plan"],
+            ["start", "plan-review", "--task", "Write a plan"],
             blocked_adapter,
         )
         self.assertEqual(code, 1)
@@ -343,7 +352,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
             ["status: complete\ndecision: approved\n\nok"], artifacts=[None]
         )
         code2, objects2 = _run_execute(
-            workspace, ["--run-id", run_id], idle
+            workspace, ["continue", run_id], idle
         )
         self.assertEqual(code2, 1)
         self.assertEqual(len(objects2), 1)
@@ -357,7 +366,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         )
         stage_code, stage_objects = _run_execute(
             workspace,
-            ["--run-id", run_id, "--stage-id", "review-plan"],
+            ["stage", run_id],
             blocked_again,
         )
         self.assertEqual(stage_code, 1)
@@ -373,7 +382,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         )
         done_code, done_objects = _run_execute(
             completed_workspace,
-            ["--workflow-id", "plan-review", "--task", "Write a plan"],
+            ["start", "plan-review", "--task", "Write a plan"],
             ScriptedAdapter(
                 [
                     "status: complete\n\nplanned",
@@ -386,7 +395,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         completed_id = done_objects[-1]["run_id"]
         unused = ScriptedAdapter(["status: complete\n\nnope"], artifacts=["# x\n"])
         code3, objects3 = _run_execute(
-            completed_workspace, ["--run-id", completed_id], unused
+            completed_workspace, ["continue", completed_id], unused
         )
         self.assertEqual(code3, 0)
         self.assertEqual(objects3[-1]["stop_reason"], "completed")
@@ -394,7 +403,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         unused_stage = ScriptedAdapter(["status: complete\n\nnope"], artifacts=["# x\n"])
         code_stage, objects_stage = _run_execute(
             completed_workspace,
-            ["--run-id", completed_id, "--stage-id", "plan"],
+            ["stage", completed_id],
             unused_stage,
         )
         self.assertEqual(code_stage, 0)
@@ -414,7 +423,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         status_path.write_text(json.dumps(status), encoding="utf-8")
         unused2 = ScriptedAdapter(["status: complete\n\nnope"], artifacts=["# x\n"])
         code4, objects4 = _run_execute(
-            completed_workspace, ["--run-id", cancelled_id], unused2
+            completed_workspace, ["continue", cancelled_id], unused2
         )
         self.assertEqual(code4, 130)
         self.assertEqual(objects4[-1]["stop_reason"], "cancelled")
@@ -431,11 +440,11 @@ class ExecuteWorkflowTests(unittest.TestCase):
         code, objects = _run_execute(
             workspace,
             [
-                "--workflow-id",
+                "start",
                 "plan-review",
                 "--task",
                 "Write a plan",
-                "--max-attempts",
+                "--attempts",
                 "1",
             ],
             adapter,
@@ -444,21 +453,9 @@ class ExecuteWorkflowTests(unittest.TestCase):
         self.assertEqual(objects[-1]["stop_reason"], "retry_exhausted")
         self.assertEqual(objects[-1]["run_status"], "active")
         run_id = objects[-1]["run_id"]
-        refused = ScriptedAdapter(
-            ["status: complete\n\nplanned again"], artifacts=["# Plan\n"]
-        )
-        with self.assertRaisesRegex(
-            ConfigurationError, "not the eligible stage review-plan"
-        ):
-            _run_execute(
-                workspace,
-                ["--run-id", run_id, "--stage-id", "plan"],
-                refused,
-            )
-        self.assertEqual(refused.calls, [])
         stage_code, stage_objects = _run_execute(
             workspace,
-            ["--run-id", run_id, "--stage-id", "review-plan"],
+            ["stage", run_id],
             ScriptedAdapter(
                 ["status: complete\ndecision: approved\n\nok"], artifacts=[None]
             ),
@@ -479,11 +476,11 @@ class ExecuteWorkflowTests(unittest.TestCase):
         code, objects = _run_execute(
             workspace,
             [
-                "--workflow-id",
+                "start",
                 "plan-review",
                 "--task",
                 "Write a plan",
-                "--max-attempts",
+                "--attempts",
                 "1",
             ],
             first,
@@ -495,7 +492,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         )
         code2, objects2 = _run_execute(
             workspace,
-            ["--run-id", run_id, "--max-attempts", "1"],
+            ["continue", run_id, "--attempts", "1"],
             second,
         )
         self.assertEqual(code2, 3)
@@ -510,15 +507,15 @@ class ExecuteWorkflowTests(unittest.TestCase):
         args = parse_args(
             [
                 "execute",
-                "--workflow-id",
+                "start",
                 "plan-review",
                 "--task",
                 "Write a plan",
-                "--max-attempts",
+                "--attempts",
                 "0",
             ]
         )
-        with self.assertRaisesRegex(ConfigurationError, "--max-attempts"):
+        with self.assertRaisesRegex(ConfigurationError, "--attempts"):
             execute_workflow(workspace, args)
 
     def test_stage_id_runs_the_first_stage_and_stops(self) -> None:
@@ -535,12 +532,11 @@ class ExecuteWorkflowTests(unittest.TestCase):
         code, objects = _run_execute(
             workspace,
             [
-                "--workflow-id",
+                "stage",
+                "--workflow",
                 "plan-review",
                 "--task",
                 "Write a plan",
-                "--stage-id",
-                "plan",
             ],
             adapter,
         )
@@ -557,23 +553,14 @@ class ExecuteWorkflowTests(unittest.TestCase):
         adapter = ScriptedAdapter(
             ["status: complete\ndecision: approved\n\nok"], artifacts=[None]
         )
-        with self.assertRaisesRegex(
-            ConfigurationError, "not the eligible stage plan"
-        ):
-            _run_execute(
-                workspace,
-                [
-                    "--workflow-id",
-                    "plan-review",
-                    "--task",
-                    "Write a plan",
-                    "--stage-id",
-                    "review-plan",
-                ],
-                adapter,
-            )
-        self.assertFalse((workspace / ".agentflow" / "runs").exists())
-        self.assertEqual(adapter.calls, [])
+        code, objects = _run_execute(
+            workspace,
+            ["stage", "--workflow", "plan-review", "--task", "Write a plan"],
+            adapter,
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(objects[-1]["stop_reason"], "stage")
+        self.assertEqual(len(adapter.calls), 1)
 
     def test_stage_id_follows_eligibility_after_the_first_stage(self) -> None:
         workspace = write_fake_workflow_workspace(
@@ -585,12 +572,11 @@ class ExecuteWorkflowTests(unittest.TestCase):
         code, objects = _run_execute(
             workspace,
             [
-                "--workflow-id",
+                "stage",
+                "--workflow",
                 "plan-review",
                 "--task",
                 "Write a plan",
-                "--stage-id",
-                "plan",
             ],
             first,
         )
@@ -598,22 +584,6 @@ class ExecuteWorkflowTests(unittest.TestCase):
         run_id = objects[-1]["run_id"]
         executions = list(
             (workspace / ".agentflow" / "runs" / run_id / "executions").iterdir()
-        )
-        repeated = ScriptedAdapter(
-            ["status: complete\n\nplanned again"], artifacts=["# Plan\n"]
-        )
-        with self.assertRaisesRegex(
-            ConfigurationError, "not the eligible stage review-plan"
-        ):
-            _run_execute(
-                workspace,
-                ["--run-id", run_id, "--stage-id", "plan"],
-                repeated,
-            )
-        self.assertEqual(repeated.calls, [])
-        self.assertEqual(
-            list((workspace / ".agentflow" / "runs" / run_id / "executions").iterdir()),
-            executions,
         )
         review = ScriptedAdapter(
             [
@@ -624,7 +594,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         )
         code2, objects2 = _run_execute(
             workspace,
-            ["--run-id", run_id, "--stage-id", "review-plan"],
+            ["stage", run_id],
             review,
         )
         self.assertEqual(code2, 0)
@@ -633,30 +603,22 @@ class ExecuteWorkflowTests(unittest.TestCase):
         self.assertEqual(objects2[-1]["run_status"], "active")
         self.assertEqual(len(review.calls), 1)
 
-    def test_stage_id_ignores_a_non_positive_max_attempts(self) -> None:
-        workspace = write_fake_workflow_workspace(
-            {"plan-review": repo_workflow_text("plan-review")}
-        )
-        adapter = ScriptedAdapter(
-            ["status: complete\n\nplanned"], artifacts=["# Plan\n"]
-        )
-        code, objects = _run_execute(
-            workspace,
-            [
-                "--workflow-id",
-                "plan-review",
-                "--task",
-                "Write a plan",
-                "--stage-id",
-                "plan",
-                "--max-attempts",
-                "0",
-            ],
-            adapter,
-        )
-        self.assertEqual(code, 0)
-        self.assertEqual(objects[-1]["stop_reason"], "stage")
-        self.assertEqual(len(adapter.calls), 1)
+    def test_stage_id_rejects_max_attempts(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit):
+            parse_args(
+                [
+                    "execute",
+                    "stage",
+                    "--workflow",
+                    "plan-review",
+                    "--task",
+                    "Write a plan",
+                    "--attempts",
+                    "1",
+                ]
+            )
+        self.assertIn("--attempts", stderr.getvalue())
 
     def test_stage_id_resumes_the_declared_source_session(self) -> None:
         workflow = """\
@@ -683,12 +645,11 @@ stages:
         code, objects = _run_execute(
             workspace,
             [
-                "--workflow-id",
+                "stage",
+                "--workflow",
                 "resume-sample",
                 "--task",
                 "Draft",
-                "--stage-id",
-                "draft",
             ],
             first,
         )
@@ -699,7 +660,7 @@ stages:
         )
         code2, objects2 = _run_execute(
             workspace,
-            ["--run-id", run_id, "--stage-id", "revise-draft"],
+            ["stage", run_id],
             second,
         )
         self.assertEqual(code2, 0)
@@ -709,6 +670,76 @@ stages:
         self.assertEqual(len(second.calls), 1)
         self.assertEqual(second.calls[0]["provider_session_id"], "native-session-1")
         self.assertIsNone(second.calls[0]["new_provider_session_id"])
+
+
+class ArgvShapeTests(unittest.TestCase):
+    def test_continue_rejects_flags_that_start_a_run(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit):
+            parse_args(["execute", "continue", "run-1", "--task", "again"])
+        self.assertIn("unrecognized", stderr.getvalue())
+
+    def test_agent_override_requires_both_provider_and_model(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit):
+            parse_args(
+                [
+                    "agent",
+                    "start",
+                    "--role",
+                    "developer",
+                    "--provider",
+                    "grok",
+                    "--prompt",
+                    "x",
+                ]
+            )
+        self.assertIn("--provider", stderr.getvalue())
+        self.assertIn("--model", stderr.getvalue())
+
+    def test_agent_session_requires_a_run(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit):
+            parse_args(
+                [
+                    "agent",
+                    "start",
+                    "--role",
+                    "developer",
+                    "--prompt",
+                    "x",
+                    "--session",
+                    "sess",
+                ]
+            )
+        self.assertIn("--session", stderr.getvalue())
+
+    def test_manual_topic_must_be_known_at_the_parser(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit):
+            parse_args(["manual", "missing"])
+        self.assertIn("missing", stderr.getvalue())
+
+
+class CommandHelpTests(unittest.TestCase):
+    def test_help_prints_command_usage_without_a_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            help_out = io.StringIO()
+            manual_out = io.StringIO()
+            with patch("sys.stdout", help_out):
+                self.assertEqual(main(["help", "execute"], cwd=cwd), 0)
+            with patch("sys.stdout", manual_out):
+                self.assertEqual(main(["man", "execute"], cwd=cwd), 0)
+        self.assertIn("Usage: agentflow execute", help_out.getvalue())
+        self.assertNotIn("Usage: agentflow execute", manual_out.getvalue())
+
+    def test_no_command_prints_help(self) -> None:
+        stdout = io.StringIO()
+        with patch("sys.stdout", stdout):
+            self.assertEqual(main([]), 0)
+        self.assertIn("Usage: agentflow", stdout.getvalue())
+        self.assertIn("execute", stdout.getvalue())
 
 
 if __name__ == "__main__":

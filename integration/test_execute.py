@@ -32,20 +32,21 @@ class ExecuteTests(unittest.TestCase):
             write_workspace(workspace, GROK_CONFIG, {"plan-review": PLAN_REVIEW})
             code, objects, stderr = run_main(
                 workspace,
-                ["execute", "--workflow-id", "plan-review", "--task", "Write a plan"],
+                ["execute", "start", "plan-review", "--task", "Write a plan"],
             )
             self.assertEqual(code, 0, stderr)
+            result = objects[0]
             self.assertEqual(
-                [item.get("provider_session_id") for item in objects[:-1]],
+                [item.get("provider_session_id") for item in result["stages"]],
                 [GROK_SESSION, GROK_SESSION],
             )
-            self.assertEqual(objects[-1]["stop_reason"], "completed")
-            self.assertEqual(objects[-1]["run_status"], "completed")
+            self.assertEqual(result["stop_reason"], "completed")
+            self.assertEqual(result["run_status"], "completed")
             published = (
                 workspace
                 / ".agentflow"
                 / "runs"
-                / objects[-1]["run_id"]
+                / result["run_id"]
                 / "outputs"
                 / "plan"
             )
@@ -60,19 +61,19 @@ class ExecuteTests(unittest.TestCase):
                 workspace,
                 [
                     "execute",
-                    "--workflow-id",
+                    "stage",
+                    "--workflow",
                     "draft-note",
                     "--task",
                     "Draft a note",
-                    "--stage-id",
-                    "draft",
                 ],
             )
             self.assertEqual(code, 0, stderr)
-            self.assertEqual(objects[0]["provider_session_id"], CODEX_THREAD)
-            self.assertEqual(objects[0]["outcome_status"], "complete")
-            self.assertEqual(objects[-1]["stop_reason"], "stage")
-            artifact = Path(objects[0]["artifact_directory"]) / "note.md"
+            result = objects[0]
+            self.assertEqual(result["stages"][0]["provider_session_id"], CODEX_THREAD)
+            self.assertEqual(result["stages"][0]["outcome_status"], "complete")
+            self.assertEqual(result["stop_reason"], "stage")
+            artifact = Path(result["stages"][0]["artifact_directory"]) / "note.md"
             self.assertTrue(artifact.is_file())
             self.assertTrue(artifact.read_text(encoding="utf-8").strip())
 
@@ -84,17 +85,17 @@ class ExecuteTests(unittest.TestCase):
                 workspace,
                 [
                     "execute",
-                    "--workflow-id",
+                    "start",
                     "solo",
                     "--task",
                     "Write",
-                    "--max-attempts",
+                    "--attempts",
                     "1",
                 ],
                 outcome="invalid",
             )
             self.assertEqual(code, 3, stderr)
-            self.assertEqual(objects[-1]["stop_reason"], "retry_exhausted")
+            self.assertEqual(objects[0]["stop_reason"], "retry_exhausted")
             self.assertEqual(execution_statuses(workspace), ["failed"])
 
 

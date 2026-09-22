@@ -18,8 +18,31 @@ _STATUS_STYLES = {
 }
 
 
-def print_help(text: str) -> None:
+def print_manual(text: str) -> None:
+    if not getattr(sys.stdout, "isatty", lambda: False)():
+        sys.stdout.write(text if text.endswith("\n") else text + "\n")
+        return
     _stdout().print(Markdown(text))
+
+
+def print_agent(result: dict[str, Any], *, role: str, provider: str, model: str) -> None:
+    console = _stdout()
+    outcome = str(result.get("outcome_status") or "failed")
+    decision = str(result.get("outcome_decision") or "")
+    if decision:
+        outcome = f"{outcome} {decision}"
+    rows = (
+        ("role", role),
+        ("model", f"{provider}/{model}"),
+        ("outcome", outcome),
+        ("run", str(result.get("run_id") or "")),
+        ("execution", str(result.get("execution_id") or "")),
+    )
+    for label, value in rows:
+        line = Text()
+        line.append(f"{label}  ", style="dim")
+        line.append(value)
+        console.print(line)
 
 
 def print_runs(

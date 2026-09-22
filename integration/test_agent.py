@@ -22,7 +22,17 @@ class AgentTests(unittest.TestCase):
             write_workspace(workspace, GROK_CONFIG, {})
             code, objects, stderr = run_main(
                 workspace,
-                ["agent", "--role", "planner", "--task", "Think", "--prompt", "hello"],
+                [
+                    "agent",
+                    "start",
+                    "--role",
+                    "planner",
+                    "--task",
+                    "Think",
+                    "--prompt",
+                    "hello",
+                    "--json",
+                ],
             )
             self.assertEqual(code, 0, stderr)
             self.assertEqual(len(objects), 1)
