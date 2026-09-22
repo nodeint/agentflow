@@ -17,7 +17,7 @@ from unittest.mock import patch
 from agentflow_kernel.config import ConfigurationError
 from agentflow_kernel.agent_runner import AgentToolRunner
 from agentflow_kernel.query import list_run_rows
-from agentflow_cli.run import execute_workflow, list_runs, main, parse_args, watch_run
+from agentflow_cli.run import execute_workflow, list_runs, main, watch_run
 from tests.support import (
     ScriptedAdapter,
     repo_workflow_text,
@@ -117,14 +117,14 @@ class WatchCommandTests(unittest.TestCase):
 def _run_execute(
     workspace: Path, arguments: list[str], adapter: ScriptedAdapter
 ) -> tuple[int, list[dict]]:
-    args = parse_args(["execute", *arguments])
+    runner = AgentToolRunner(adapters={"fake": adapter}, timeout_sec=10)
     stdout = io.StringIO()
-    with redirect_stderr(io.StringIO()), patch("sys.stdout", stdout):
-        code = execute_workflow(
-            workspace,
-            args,
-            runner=AgentToolRunner(adapters={"fake": adapter}, timeout_sec=10),
-        )
+    with (
+        redirect_stderr(io.StringIO()),
+        patch("sys.stdout", stdout),
+        patch("agentflow_cli.commands.execute.AgentToolRunner", return_value=runner),
+    ):
+        code = main(["execute", *arguments], cwd=workspace)
     payload = json.loads(stdout.getvalue())
     summary = {
         "run_id": payload["run_id"],
@@ -266,24 +266,22 @@ class ExecuteWorkflowTests(unittest.TestCase):
                 "plan-implement": requiring,
             }
         )
-        with self.assertRaisesRegex(ConfigurationError, "pass --prior"):
-            _run_execute(
-                workspace,
-                ["start", "plan-implement", "--task", "Do work"],
-                ScriptedAdapter(["status: complete\n\nx"], artifacts=["# x\n"]),
-            )
-        with self.assertRaisesRegex(ConfigurationError, "pass --prior"):
-            _run_execute(
-                workspace,
-                [
-                    "stage",
-                    "--workflow",
-                    "plan-implement",
-                    "--task",
-                    "Do work",
-                ],
-                ScriptedAdapter(["status: complete\n\nx"], artifacts=["# x\n"]),
-            )
+        for argv in (
+            ["execute", "start", "plan-implement", "--task", "Do work"],
+            [
+                "execute",
+                "stage",
+                "--workflow",
+                "plan-implement",
+                "--task",
+                "Do work",
+            ],
+        ):
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                code = main(argv, cwd=workspace)
+            self.assertEqual(code, 2)
+            self.assertIn("pass --prior", stderr.getvalue())
         self.assertFalse((workspace / ".agentflow" / "runs").exists())
         prior_code, prior_objects = _run_execute(
             workspace,
@@ -504,19 +502,14 @@ class ExecuteWorkflowTests(unittest.TestCase):
         workspace = write_fake_workflow_workspace(
             {"plan-review": repo_workflow_text("plan-review")}
         )
-        args = parse_args(
-            [
-                "execute",
-                "start",
-                "plan-review",
-                "--task",
-                "Write a plan",
-                "--attempts",
-                "0",
-            ]
-        )
         with self.assertRaisesRegex(ConfigurationError, "--attempts"):
-            execute_workflow(workspace, args)
+            execute_workflow(
+                workspace,
+                action="start",
+                workflow_id="plan-review",
+                task="Write a plan",
+                max_attempts=0,
+            )
 
     def test_stage_id_runs_the_first_stage_and_stops(self) -> None:
         workspace = write_fake_workflow_workspace(
@@ -605,8 +598,8 @@ class ExecuteWorkflowTests(unittest.TestCase):
 
     def test_stage_id_rejects_max_attempts(self) -> None:
         stderr = io.StringIO()
-        with redirect_stderr(stderr), self.assertRaises(SystemExit):
-            parse_args(
+        with redirect_stderr(stderr):
+            code = main(
                 [
                     "execute",
                     "stage",
@@ -618,6 +611,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
                     "1",
                 ]
             )
+        self.assertEqual(code, 2)
         self.assertIn("--attempts", stderr.getvalue())
 
     def test_stage_id_resumes_the_declared_source_session(self) -> None:
@@ -675,14 +669,15 @@ stages:
 class ArgvShapeTests(unittest.TestCase):
     def test_continue_rejects_flags_that_start_a_run(self) -> None:
         stderr = io.StringIO()
-        with redirect_stderr(stderr), self.assertRaises(SystemExit):
-            parse_args(["execute", "continue", "run-1", "--task", "again"])
-        self.assertIn("unrecognized", stderr.getvalue())
+        with redirect_stderr(stderr):
+            code = main(["execute", "continue", "run-1", "--task", "again"])
+        self.assertEqual(code, 2)
+        self.assertIn("--task", stderr.getvalue())
 
     def test_agent_override_requires_both_provider_and_model(self) -> None:
         stderr = io.StringIO()
-        with redirect_stderr(stderr), self.assertRaises(SystemExit):
-            parse_args(
+        with redirect_stderr(stderr):
+            code = main(
                 [
                     "agent",
                     "start",
@@ -694,13 +689,14 @@ class ArgvShapeTests(unittest.TestCase):
                     "x",
                 ]
             )
+        self.assertEqual(code, 2)
         self.assertIn("--provider", stderr.getvalue())
         self.assertIn("--model", stderr.getvalue())
 
     def test_agent_session_requires_a_run(self) -> None:
         stderr = io.StringIO()
-        with redirect_stderr(stderr), self.assertRaises(SystemExit):
-            parse_args(
+        with redirect_stderr(stderr):
+            code = main(
                 [
                     "agent",
                     "start",
@@ -712,32 +708,38 @@ class ArgvShapeTests(unittest.TestCase):
                     "sess",
                 ]
             )
+        self.assertEqual(code, 2)
         self.assertIn("--session", stderr.getvalue())
-
-    def test_manual_topic_must_be_known_at_the_parser(self) -> None:
-        stderr = io.StringIO()
-        with redirect_stderr(stderr), self.assertRaises(SystemExit):
-            parse_args(["manual", "missing"])
-        self.assertIn("missing", stderr.getvalue())
-
 
 class CommandHelpTests(unittest.TestCase):
     def test_help_prints_command_usage_without_a_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
             help_out = io.StringIO()
-            manual_out = io.StringIO()
             with patch("sys.stdout", help_out):
-                self.assertEqual(main(["help", "execute"], cwd=cwd), 0)
-            with patch("sys.stdout", manual_out):
-                self.assertEqual(main(["man", "execute"], cwd=cwd), 0)
-        self.assertIn("Usage: agentflow execute", help_out.getvalue())
-        self.assertNotIn("Usage: agentflow execute", manual_out.getvalue())
+                self.assertEqual(main(["execute", "--help"], cwd=cwd), 0)
+        text = help_out.getvalue()
+        self.assertIn("Usage: agentflow execute", text)
+        self.assertIn("Exit 3", text)
+        self.assertIn("--attempts", text)
+
+    def test_help_subcommand_prints_flags_declared_on_that_subcommand(self) -> None:
+        stdout = io.StringIO()
+        with patch("sys.stdout", stdout):
+            self.assertEqual(main(["execute", "start", "--help"]), 0)
+        self.assertIn("--attempts", stdout.getvalue())
+
+    def test_help_rejects_an_unknown_subcommand(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            code = main(["execute", "missing"])
+        self.assertEqual(code, 2)
+        self.assertIn("missing", stderr.getvalue())
 
     def test_no_command_prints_help(self) -> None:
         stdout = io.StringIO()
         with patch("sys.stdout", stdout):
-            self.assertEqual(main([]), 0)
+            self.assertEqual(main([]), 2)
         self.assertIn("Usage: agentflow", stdout.getvalue())
         self.assertIn("execute", stdout.getvalue())
 

@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.table import Table
 from rich.text import Text
 
@@ -16,13 +15,6 @@ _STATUS_STYLES = {
     "blocked": "yellow",
     "cancelled": "dim",
 }
-
-
-def print_manual(text: str) -> None:
-    if not getattr(sys.stdout, "isatty", lambda: False)():
-        sys.stdout.write(text if text.endswith("\n") else text + "\n")
-        return
-    _stdout().print(Markdown(text))
 
 
 def print_agent(result: dict[str, Any], *, role: str, provider: str, model: str) -> None:
