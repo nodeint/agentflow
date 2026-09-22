@@ -19,9 +19,8 @@ models:
   grok-model:
     provider: grok
     model: grok-test
-    thinking:
-      allowed: [low]
-      default: low
+    options:
+      thinking: low
 roles:
   planner:
     default_model: grok-model
@@ -34,9 +33,8 @@ models:
   codex-model:
     provider: codex
     model: codex-test
-    thinking:
-      allowed: [low]
-      default: low
+    options:
+      thinking: low
 roles:
   writer:
     default_model: codex-model

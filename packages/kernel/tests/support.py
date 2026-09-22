@@ -28,7 +28,7 @@ class FakeAdapter(BaseCLIAdapter):
         new_agent_id: Optional[str],
         prompt_file: Path,
         last_message_file: Path,
-        thinking: Optional[str] = None,
+        options: Optional[dict[str, str]] = None,
     ) -> CommandSpec:
         self.calls.append(
             {
@@ -38,7 +38,7 @@ class FakeAdapter(BaseCLIAdapter):
                 "agent_id": agent_id,
                 "new_agent_id": new_agent_id,
                 "prompt_file": prompt_file,
-                "thinking": thinking,
+                "options": dict(options or {}),
             }
         )
         response_input = prompt.splitlines()[0].removeprefix("user: ")
@@ -154,15 +154,14 @@ models:
   grok:
     provider: grok
     model: grok-4.6
-    thinking:
-      allowed: [low, medium, high, xhigh]
-      default: high
+    options:
+      thinking: high
   gpt-terra:
     provider: codex
     model: gpt-5.6-terra
-    thinking:
-      allowed: [medium, high]
-      default: medium
+    options:
+      thinking: medium
+      temperature: "0.2"
 roles:
   developer:
     default_model: grok
@@ -226,9 +225,8 @@ models:
   fake-model:
     provider: fake
     model: m1
-    thinking:
-      allowed: [low, medium, high]
-      default: medium
+    options:
+      thinking: medium
 roles:
   planner:
     default_model: fake-model

@@ -93,6 +93,38 @@ class GrokAdapterTests(unittest.TestCase):
         self.assertEqual(text, "status: complete\n\n# Plan")
         self.assertEqual(parse_stage_outcome(text, required=True).status, "complete")
 
+    def test_maps_options_onto_grok_flags(self) -> None:
+        spec = GrokAdapter().build_command(
+            model="grok-4",
+            workspace="/work",
+            prompt="prompt",
+            agent_id=None,
+            new_agent_id=None,
+            prompt_file=Path("/tmp/prompt.txt"),
+            last_message_file=Path("/tmp/last.txt"),
+            options={"thinking": "medium", "max_turns": "4"},
+        )
+        self.assertEqual(
+            spec.argv,
+            [
+                "grok",
+                "--prompt-file",
+                "/tmp/prompt.txt",
+                "-m",
+                "grok-4",
+                "--cwd",
+                "/work",
+                "--output-format",
+                "streaming-json",
+                "--always-approve",
+                "--verbatim",
+                "--reasoning-effort",
+                "medium",
+                "--max-turns",
+                "4",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

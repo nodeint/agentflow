@@ -79,7 +79,7 @@ class RunnerTests(unittest.TestCase):
     def test_rejects_a_thinking_level_change_when_resuming(self) -> None:
         runner = AgentToolRunner(adapters={"fake": FakeAdapter()}, timeout_sec=10)
         with tempfile.TemporaryDirectory() as tmp:
-            first = runner.run("fake", "m1", "first", tmp, thinking="high")
+            first = runner.run("fake", "m1", "first", tmp, options={"thinking": "high"})
             with self.assertRaisesRegex(
                 ValueError, "different provider, model, or thinking"
             ):
@@ -90,7 +90,7 @@ class RunnerTests(unittest.TestCase):
                     tmp,
                     session_id=first["session_id"],
                     resume_execution_id=first["execution_id"],
-                    thinking="medium",
+                    options={"thinking": "medium"},
                 )
 
     def test_records_loop_executions_without_overwriting_attempts(self) -> None:

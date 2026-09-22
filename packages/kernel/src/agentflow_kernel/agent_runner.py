@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import os
 import tempfile
-from typing import Dict, Optional, Tuple
+from typing import Dict, Mapping, Optional, Tuple
 
 from .base_adapter import BaseCLIAdapter, NewSession
 from .command_executor import (
@@ -49,7 +49,7 @@ class AgentToolRunner:
         stage_id: str = "agent",
         stage_attempt: Optional[int] = None,
         execution_order: Optional[int] = None,
-        thinking: Optional[str] = None,
+        options: Optional[Mapping[str, str]] = None,
     ) -> Dict[str, str]:
         workspace_path = Path(workspace).expanduser().resolve()
         if not workspace_path.is_dir():
@@ -65,6 +65,8 @@ class AgentToolRunner:
             supported = ", ".join(sorted(self.adapters))
             raise ValueError(f"Unsupported CLI provider: {provider}. Supported: {supported}")
 
+        resolved_options = dict(options or {})
+        thinking = resolved_options.get("thinking") or None
         store = SessionStore(workspace_path)
         record, is_new, context = store.load_or_create(
             provider_key,
@@ -128,7 +130,7 @@ class AgentToolRunner:
                 turn_prompt,
                 agent_id,
                 new_session,
-                thinking,
+                resolved_options,
                 event_reporter,
                 store,
                 context,
@@ -207,7 +209,7 @@ class AgentToolRunner:
         prompt: str,
         agent_id: Optional[str],
         new_session: Optional[NewSession],
-        thinking: Optional[str],
+        options: Mapping[str, str],
         event_reporter: ProviderEventReporter,
         store: SessionStore,
         context: ExecutionContext,
@@ -227,7 +229,7 @@ class AgentToolRunner:
                 ),
                 prompt_file=prompt_file,
                 last_message_file=last_message_file,
-                thinking=thinking,
+                options=options,
             )
             def on_output(line: str) -> None:
                 event = adapter.parse_progress_event(line)

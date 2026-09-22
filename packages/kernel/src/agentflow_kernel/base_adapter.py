@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 
 @dataclass
@@ -32,7 +32,7 @@ class BaseCLIAdapter(ABC):
         new_agent_id: Optional[str],
         prompt_file: Path,
         last_message_file: Path,
-        thinking: Optional[str] = None,
+        options: Optional[Mapping[str, str]] = None,
     ) -> CommandSpec:
         """Build the provider CLI invocation for a single turn."""
 

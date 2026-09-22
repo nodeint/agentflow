@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec
 from agentflow_kernel.provider_events import classify_provider_error, provider_error_message
@@ -22,7 +22,7 @@ class GrokAdapter(BaseCLIAdapter):
         new_agent_id: Optional[str],
         prompt_file: Path,
         last_message_file: Path,
-        thinking: Optional[str] = None,
+        options: Optional[Mapping[str, str]] = None,
     ) -> CommandSpec:
         del prompt, last_message_file
         self._tool_calls = {}
@@ -39,12 +39,11 @@ class GrokAdapter(BaseCLIAdapter):
             "--always-approve",
             "--verbatim",
         ]
+        _append_options(cmd, options)
         if agent_id:
             cmd.extend(["--resume", agent_id])
         elif new_agent_id:
             cmd.extend(["--session-id", new_agent_id])
-        if thinking:
-            cmd.extend(["--reasoning-effort", thinking])
         return CommandSpec(argv=cmd)
 
     def parse_response(
@@ -125,6 +124,16 @@ class GrokAdapter(BaseCLIAdapter):
         if isinstance(tool_call_id, str):
             return self._tool_calls.get(tool_call_id, {})
         return {}
+
+
+def _append_options(cmd: list[str], options: Optional[Mapping[str, str]]) -> None:
+    for key, value in (options or {}).items():
+        flag = _GROK_FLAGS.get(key, key.replace("_", "-"))
+        cmd.extend([f"--{flag}", value])
+
+
+# Semantic option names that do not match the grok long flag.
+_GROK_FLAGS = {"thinking": "reasoning-effort"}
 
 
 def _text_with_status_header(segments: list[list[str]]) -> str:

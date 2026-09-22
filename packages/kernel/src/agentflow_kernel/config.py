@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from types import MappingProxyType
+from typing import Any, Mapping, Optional
 
 from .workflow import WorkflowDocument, load_workflow_document
 from .yaml_subset import parse_yaml_document
@@ -16,7 +18,15 @@ class ConfigurationError(ValueError):
 class StageTarget:
     provider: str
     model: str
-    thinking: Optional[str]
+    options: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
+
+    @property
+    def thinking(self) -> Optional[str]:
+        value = self.options.get("thinking")
+        return value or None
 
 
 def load_yaml_mapping(path: Path) -> dict[str, Any]:
@@ -48,7 +58,11 @@ def resolve_stage_target(
             "Pass both --provider and --model to override the resolved stage model, or omit both."
         )
     if provider is not None and model is not None:
-        return StageTarget(provider=provider, model=model, thinking=thinking)
+        return StageTarget(
+            provider=provider,
+            model=model,
+            options=_thinking_options(thinking),
+        )
     workflow = _load_stage_workflow(workspace, workflow_id)
     stage = workflow.stages.get(stage_id)
     if stage is None:
@@ -70,7 +84,7 @@ def resolve_stage_target(
     return StageTarget(
         provider=declared.provider,
         model=declared.model,
-        thinking=thinking if thinking is not None else declared.thinking,
+        options=_with_thinking(declared.options, thinking),
     )
 
 
@@ -90,7 +104,11 @@ def resolve_role_target(
     if provider is not None and model is not None:
         roles = _mapping(config.get("roles"), "roles")
         _mapping(roles.get(role), f"roles.{role}")
-        return StageTarget(provider=provider, model=model, thinking=thinking)
+        return StageTarget(
+            provider=provider,
+            model=model,
+            options=_thinking_options(thinking),
+        )
     return _resolve_role_cascade(config, role, thinking=thinking)
 
 
@@ -119,31 +137,22 @@ def _resolve_role_cascade(
     resolved_field = model_field or f"roles.{role_key}.default_model"
     resolved_model_key = _string(model_key or role.get("default_model"), resolved_field)
     model_config = _mapping(models.get(resolved_model_key), f"models.{resolved_model_key}")
+    if "thinking" in model_config:
+        raise ConfigurationError(
+            f"models.{resolved_model_key}.thinking is not supported. "
+            f"Put CLI parameters under models.{resolved_model_key}.options."
+        )
     provider = _string(model_config.get("provider"), f"models.{resolved_model_key}.provider")
     native_model = _string(model_config.get("model"), f"models.{resolved_model_key}.model")
-    resolved_thinking = thinking
-    if resolved_thinking is None:
-        resolved_thinking = role.get("thinking") if isinstance(role.get("thinking"), str) else None
-    if resolved_thinking is None:
-        thinking_config = _mapping(
-            model_config.get("thinking"), f"models.{resolved_model_key}.thinking"
+    options = _options(model_config.get("options"), f"models.{resolved_model_key}.options")
+    role_thinking = role.get("thinking")
+    if isinstance(role_thinking, str):
+        options["thinking"] = _string(role_thinking, f"roles.{role_key}.thinking")
+    if thinking is not None:
+        options["thinking"] = _string(
+            thinking, thinking_label or f"roles.{role_key}.thinking"
         )
-        resolved_thinking = thinking_config.get("default")
-    resolved_thinking = _string(
-        resolved_thinking, f"models.{resolved_model_key}.thinking.default"
-    )
-    thinking_config = _mapping(
-        model_config.get("thinking"), f"models.{resolved_model_key}.thinking"
-    )
-    allowed = _strings(
-        thinking_config.get("allowed"), f"models.{resolved_model_key}.thinking.allowed"
-    )
-    if resolved_thinking not in allowed:
-        label = thinking_label or f"roles.{role_key}"
-        raise ConfigurationError(
-            f"{label} thinking {resolved_thinking!r} is not allowed by models.{resolved_model_key}."
-        )
-    return StageTarget(provider=provider, model=native_model, thinking=resolved_thinking)
+    return StageTarget(provider=provider, model=native_model, options=options)
 
 
 def _mapping(value: Any, field: str) -> dict[str, Any]:
@@ -158,7 +167,31 @@ def _string(value: Any, field: str) -> str:
     return value.strip()
 
 
-def _strings(value: Any, field: str) -> list[str]:
-    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
-        raise ConfigurationError(f"Missing or invalid {field}.")
-    return value
+_OPTION_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_.-]*")
+
+
+def _options(value: Any, field: str) -> dict[str, str]:
+    if value is None:
+        return {}
+    mapping = _mapping(value, field)
+    parsed: dict[str, str] = {}
+    for key, item in mapping.items():
+        if not isinstance(key, str) or _OPTION_KEY.fullmatch(key) is None:
+            raise ConfigurationError(f"Missing or invalid {field} key.")
+        if not isinstance(item, str) or not item.strip():
+            raise ConfigurationError(f"Missing or invalid {field}.{key}.")
+        parsed[key] = item.strip()
+    return parsed
+
+
+def _thinking_options(thinking: Optional[str]) -> dict[str, str]:
+    if thinking is None:
+        return {}
+    return {"thinking": _string(thinking, "thinking")}
+
+
+def _with_thinking(options: Mapping[str, str], thinking: Optional[str]) -> dict[str, str]:
+    resolved = dict(options)
+    if thinking is not None:
+        resolved["thinking"] = _string(thinking, "thinking")
+    return resolved

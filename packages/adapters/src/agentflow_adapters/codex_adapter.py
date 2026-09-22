@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec
 from agentflow_kernel.provider_events import classify_provider_error, provider_error_message
@@ -18,7 +19,7 @@ class CodexAdapter(BaseCLIAdapter):
         new_agent_id: Optional[str],
         prompt_file: Path,
         last_message_file: Path,
-        thinking: Optional[str] = None,
+        options: Optional[Mapping[str, str]] = None,
     ) -> CommandSpec:
         del new_agent_id, prompt_file
         cmd = [
@@ -34,8 +35,7 @@ class CodexAdapter(BaseCLIAdapter):
             "--output-last-message",
             str(last_message_file),
         ]
-        if thinking:
-            cmd.extend(["-c", f'model_reasoning_effort="{thinking}"'])
+        _append_options(cmd, options)
         if agent_id:
             cmd.extend(["resume", agent_id, "-"])
         else:
@@ -113,6 +113,24 @@ class CodexAdapter(BaseCLIAdapter):
         if event_type == "error":
             return classify_provider_error(provider_error_message(payload))
         return None
+
+
+def _append_options(cmd: list[str], options: Optional[Mapping[str, str]]) -> None:
+    for key, value in (options or {}).items():
+        config_key = _CODEX_CONFIG_KEYS.get(key, key)
+        cmd.extend(["-c", f"{config_key}={_toml_literal(value)}"])
+
+
+# Semantic option names that do not match a Codex config key.
+_CODEX_CONFIG_KEYS = {"thinking": "model_reasoning_effort"}
+_TOML_BARE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?|true|false")
+
+
+def _toml_literal(value: str) -> str:
+    if _TOML_BARE.fullmatch(value):
+        return value
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def _item_summary(item: Any, item_type: Any, action: str) -> str:

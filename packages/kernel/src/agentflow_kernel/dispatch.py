@@ -89,7 +89,7 @@ def dispatch_named_stage(
     result = (runner or AgentToolRunner()).run(
         provider=target.provider,
         model=target.model,
-        thinking=target.thinking,
+        options=dict(target.options),
         prompt=request.prompt,
         workspace=str(workspace),
         session_id=session_id,

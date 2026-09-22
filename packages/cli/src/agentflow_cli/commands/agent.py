@@ -27,8 +27,8 @@ _ROLE_HELP = "Key under roles in .agentflow/config.yaml. The key must exist."
 _PROVIDER_HELP = "Provider for this role. Pass with --model, or omit both."
 _MODEL_HELP = "Native model id for this role. Pass with --provider, or omit both."
 _THINKING_HELP = (
-    "Thinking level. Checked against the model allow-list unless "
-    "--provider and --model are both set."
+    "Overrides options.thinking for this turn. "
+    "With --provider and --model, this is the only option sent."
 )
 _PROMPT_HELP = "Prompt text."
 _FILE_HELP = "Read the prompt from this file."
@@ -238,7 +238,7 @@ def dispatch_agent(
         result = (runner or AgentToolRunner()).run(
             provider=target.provider,
             model=target.model,
-            thinking=target.thinking,
+            options=dict(target.options),
             prompt=resolve_prompt(
                 prompt=prompt,
                 prompt_file=prompt_file,
