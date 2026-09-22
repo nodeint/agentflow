@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from reply import response_text, write_artifact
+
+
+def main() -> None:
+    prompt = sys.stdin.read()
+    write_artifact(prompt)
+    text = response_text(prompt)
+    if "--output-last-message" in sys.argv:
+        index = sys.argv.index("--output-last-message")
+        Path(sys.argv[index + 1]).write_text(text, encoding="utf-8")
+    sys.stdout.write(
+        json.dumps({"type": "thread.started", "thread_id": "fake-codex-thread"}) + "\n"
+    )
+    sys.stdout.write(
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": text},
+            }
+        )
+        + "\n"
+    )
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from reply import response_text, write_artifact
+
+
+def main() -> None:
+    prompt = ""
+    if "--prompt-file" in sys.argv:
+        index = sys.argv.index("--prompt-file")
+        prompt = Path(sys.argv[index + 1]).read_text(encoding="utf-8")
+    write_artifact(prompt)
+    text = response_text(prompt)
+    sys.stdout.write(json.dumps({"type": "text", "data": text}) + "\n")
+    sys.stdout.write(
+        json.dumps({"type": "end", "sessionId": "fake-grok-session"}) + "\n"
+    )
+
+
+if __name__ == "__main__":
+    main()

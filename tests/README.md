@@ -43,6 +43,15 @@ From the repository root, one process per package:
 uv run python -m unittest discover -s packages/kernel/tests -t packages/kernel -p 'test_*.py'
 uv run python -m unittest discover -s packages/adapters/tests -t packages/adapters -p 'test_*.py'
 uv run python -m unittest discover -s packages/cli/tests -t packages/cli -p 'test_*.py'
+uv run python -m unittest discover -s integration -t . -p 'test_*.py'
 ```
+
+## Integration
+
+- Integration tests live in `integration/` at the repository root.
+- They call `agentflow_cli.run.main` and reach the real adapters through executables named `grok` and `codex` on `PATH`.
+- Those executables are `integration/fixtures/bin/grok` and `integration/fixtures/bin/codex`. They must not invoke the real grok or codex CLIs.
+- An integration module must not import a package `tests` module.
+- Assert the exit code and the run record. Do not re-test a policy that already has a package test.
 
 Touched tests must map to a production module and a High path.
