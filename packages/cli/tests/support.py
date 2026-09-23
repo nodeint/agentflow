@@ -14,6 +14,11 @@ from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec
 
 
 class FakeAdapter(BaseCLIAdapter):
+    command = "fake"
+
+    def validate_options(self, options: Optional[dict[str, str]] = None) -> None:
+        del options
+
     def __init__(self) -> None:
         self.calls = []
 

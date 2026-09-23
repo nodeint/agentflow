@@ -10,6 +10,8 @@ from agentflow_kernel.provider_events import classify_provider_error, provider_e
 
 
 class GrokAdapter(BaseCLIAdapter):
+    command = "grok"
+
     def __init__(self) -> None:
         self._tool_calls: Dict[str, Dict[str, Any]] = {}
 
@@ -26,8 +28,9 @@ class GrokAdapter(BaseCLIAdapter):
     ) -> CommandSpec:
         del prompt, last_message_file
         self._tool_calls = {}
+        self.validate_options(dict(options or {}))
         cmd = [
-            "grok",
+            self.command,
             "--prompt-file",
             str(prompt_file),
             "-m",
@@ -45,6 +48,15 @@ class GrokAdapter(BaseCLIAdapter):
         elif new_agent_id:
             cmd.extend(["--session-id", new_agent_id])
         return CommandSpec(argv=cmd)
+
+    def validate_options(self, options: Mapping[str, str]) -> None:
+        for key, value in options.items():
+            check = _GROK_OPTION_CHECKS.get(key)
+            if check is None:
+                raise ValueError(f"{key} is not a grok option.")
+            if not value.strip():
+                raise ValueError(f"{key} is empty.")
+            check(value)
 
     def parse_response(
         self, stdout: str, last_message_file: Path
@@ -124,6 +136,52 @@ class GrokAdapter(BaseCLIAdapter):
         if isinstance(tool_call_id, str):
             return self._tool_calls.get(tool_call_id, {})
         return {}
+
+
+_GROK_THINKING = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+_GROK_PERMISSION_MODES = (
+    "default",
+    "acceptEdits",
+    "auto",
+    "dontAsk",
+    "bypassPermissions",
+    "plan",
+)
+
+
+def _one_of(value: str, allowed: tuple[str, ...], field: str) -> None:
+    if value not in allowed:
+        raise ValueError(f"{field} must be one of: {', '.join(allowed)}.")
+
+
+def _grok_thinking(value: str) -> None:
+    _one_of(value, _GROK_THINKING, "thinking")
+
+
+def _grok_max_turns(value: str) -> None:
+    if not value.isdigit() or int(value) < 1:
+        raise ValueError("max_turns must be an integer of at least 1.")
+
+
+def _grok_permission_mode(value: str) -> None:
+    _one_of(value, _GROK_PERMISSION_MODES, "permission_mode")
+
+
+def _grok_text(value: str) -> None:
+    del value
+
+
+_GROK_OPTION_CHECKS = {
+    "thinking": _grok_thinking,
+    "max_turns": _grok_max_turns,
+    "tools": _grok_text,
+    "disallowed_tools": _grok_text,
+    "permission_mode": _grok_permission_mode,
+    "rules": _grok_text,
+    "allow": _grok_text,
+    "deny": _grok_text,
+    "sandbox": _grok_text,
+}
 
 
 def _append_options(cmd: list[str], options: Optional[Mapping[str, str]]) -> None:

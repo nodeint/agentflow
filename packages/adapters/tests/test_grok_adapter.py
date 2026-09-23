@@ -10,6 +10,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 import json
 import unittest
 
+from agentflow_adapters import provider_commands
 from agentflow_adapters.grok_adapter import GrokAdapter
 from agentflow_kernel.stage_outcome import parse_stage_outcome
 
@@ -93,6 +94,18 @@ class GrokAdapterTests(unittest.TestCase):
         self.assertEqual(text, "status: complete\n\n# Plan")
         self.assertEqual(parse_stage_outcome(text, required=True).status, "complete")
 
+    def test_rejects_an_unknown_option_and_a_bad_thinking_value(self) -> None:
+        adapter = GrokAdapter()
+        with self.assertRaisesRegex(ValueError, "temperature is not a grok option"):
+            adapter.validate_options({"temperature": "0.2"})
+        with self.assertRaisesRegex(
+            ValueError,
+            "thinking must be one of: none, minimal, low, medium, high, xhigh, max",
+        ):
+            adapter.validate_options({"thinking": "banana"})
+        with self.assertRaisesRegex(ValueError, "max_turns must be an integer"):
+            adapter.validate_options({"max_turns": "0"})
+
     def test_maps_options_onto_grok_flags(self) -> None:
         spec = GrokAdapter().build_command(
             model="grok-4",
@@ -104,10 +117,11 @@ class GrokAdapterTests(unittest.TestCase):
             last_message_file=Path("/tmp/last.txt"),
             options={"thinking": "medium", "max_turns": "4"},
         )
+        self.assertEqual(provider_commands()["grok"], GrokAdapter.command)
         self.assertEqual(
             spec.argv,
             [
-                "grok",
+                GrokAdapter.command,
                 "--prompt-file",
                 "/tmp/prompt.txt",
                 "-m",

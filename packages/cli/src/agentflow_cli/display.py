@@ -131,6 +131,22 @@ def print_notice(message: str) -> None:
     _stderr().print(line)
 
 
+def print_doctor(checks: tuple[Any, ...]) -> None:
+    console = _stdout()
+    for check in checks:
+        line = Text()
+        line.append(f"{check.name:<12}")
+        if check.ok:
+            line.append("ok", style="green")
+        else:
+            line.append("failed", style="red")
+        console.print(line)
+        for item in check.items:
+            console.print(Text(f"  {item}", style="dim"))
+        for problem in check.problems:
+            console.print(f"  {problem}")
+
+
 def print_error(message: str) -> None:
     line = Text()
     line.append("agentflow: ", style="bold red")

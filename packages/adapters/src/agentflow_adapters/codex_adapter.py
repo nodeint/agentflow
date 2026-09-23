@@ -10,6 +10,8 @@ from agentflow_kernel.provider_events import classify_provider_error, provider_e
 
 
 class CodexAdapter(BaseCLIAdapter):
+    command = "codex"
+
     def build_command(
         self,
         model: str,
@@ -22,8 +24,9 @@ class CodexAdapter(BaseCLIAdapter):
         options: Optional[Mapping[str, str]] = None,
     ) -> CommandSpec:
         del new_agent_id, prompt_file
+        self.validate_options(dict(options or {}))
         cmd = [
-            "codex",
+            self.command,
             "exec",
             "-C",
             workspace,
@@ -43,6 +46,15 @@ class CodexAdapter(BaseCLIAdapter):
             # Passing `--sandbox` together is rejected by current `codex exec`.
             cmd.extend(["--approve-for-me", "-"])
         return CommandSpec(argv=cmd, stdin=prompt)
+
+    def validate_options(self, options: Mapping[str, str]) -> None:
+        for key, value in options.items():
+            if _OPTION_KEY.fullmatch(key) is None:
+                raise ValueError(f"{key} is not a codex option.")
+            if not value.strip():
+                raise ValueError(f"{key} is empty.")
+            if key == "thinking":
+                _one_of(value, _CODEX_THINKING, "thinking")
 
     def parse_response(
         self, stdout: str, last_message_file: Path
@@ -113,6 +125,15 @@ class CodexAdapter(BaseCLIAdapter):
         if event_type == "error":
             return classify_provider_error(provider_error_message(payload))
         return None
+
+
+_CODEX_THINKING = ("minimal", "low", "medium", "high", "xhigh")
+_OPTION_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_.-]*")
+
+
+def _one_of(value: str, allowed: tuple[str, ...], field: str) -> None:
+    if value not in allowed:
+        raise ValueError(f"{field} must be one of: {', '.join(allowed)}.")
 
 
 def _append_options(cmd: list[str], options: Optional[Mapping[str, str]]) -> None:

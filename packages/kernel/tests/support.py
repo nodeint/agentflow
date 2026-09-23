@@ -16,6 +16,11 @@ from agentflow_kernel.session_records import create_workflow_session
 
 
 class FakeAdapter(BaseCLIAdapter):
+    command = "fake"
+
+    def validate_options(self, options: Optional[dict[str, str]] = None) -> None:
+        del options
+
     def __init__(self) -> None:
         self.calls = []
 

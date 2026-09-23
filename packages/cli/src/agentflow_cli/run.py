@@ -9,6 +9,7 @@ import typer
 from agentflow_kernel.config import ConfigurationError
 
 from .commands.agent import agent_app, dispatch_agent
+from .commands.doctor import doctor_app, run_doctor
 from .commands.execute import execute_workflow, workflow_commands
 from .commands.sessions import list_sessions, sessions_app
 from .commands.watch import watch_app, watch_session
@@ -38,6 +39,7 @@ app.add_typer(sessions_app, name="sessions")
 app.add_typer(workflow_commands)
 app.add_typer(agent_app, name="agent")
 app.add_typer(watch_app, name="watch")
+app.add_typer(doctor_app, name="doctor")
 
 __all__ = [
     "app",
@@ -48,6 +50,7 @@ __all__ = [
     "list_sessions",
     "main",
     "resolve_prompt",
+    "run_doctor",
     "watch_session",
 ]
 

@@ -199,6 +199,21 @@ class RunnerTests(unittest.TestCase):
             )
             self.assertEqual(retry_status["status"], "active")
 
+    def test_rejects_provider_options_before_creating_a_session(self) -> None:
+        from agentflow_adapters.grok_adapter import GrokAdapter
+
+        runner = AgentToolRunner(adapters={"grok": GrokAdapter()}, timeout_sec=10)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "thinking must be one of"):
+                runner.run(
+                    "grok",
+                    "grok-4",
+                    "prompt",
+                    tmp,
+                    options={"thinking": "banana"},
+                )
+            self.assertFalse((Path(tmp) / ".agentflow").exists())
+
     def test_constructs_the_default_adapter_registry(self) -> None:
         from agentflow_adapters import default_adapters
 

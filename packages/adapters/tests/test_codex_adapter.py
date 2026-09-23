@@ -9,10 +9,19 @@ if str(PACKAGE_ROOT) not in sys.path:
 
 import unittest
 
+from agentflow_adapters import provider_commands
 from agentflow_adapters.codex_adapter import CodexAdapter
 
 
 class CodexAdapterTests(unittest.TestCase):
+    def test_rejects_a_thinking_value_codex_does_not_accept(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "thinking must be one of: minimal, low, medium, high, xhigh",
+        ):
+            CodexAdapter().validate_options({"thinking": "max"})
+        CodexAdapter().validate_options({"thinking": "medium", "temperature": "0.2"})
+
     def test_maps_options_onto_codex_config_overrides(self) -> None:
         spec = CodexAdapter().build_command(
             model="gpt-5",
@@ -24,6 +33,8 @@ class CodexAdapterTests(unittest.TestCase):
             last_message_file=Path("/tmp/last.txt"),
             options={"thinking": "medium", "temperature": "0.2"},
         )
+        self.assertEqual(spec.argv[0], CodexAdapter.command)
+        self.assertEqual(provider_commands()["codex"], CodexAdapter.command)
         self.assertIn("-c", spec.argv)
         overrides = [
             spec.argv[index + 1]

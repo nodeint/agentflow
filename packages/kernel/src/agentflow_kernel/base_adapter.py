@@ -19,6 +19,15 @@ class NewSession:
 
 
 class BaseCLIAdapter(ABC):
+    @property
+    @abstractmethod
+    def command(self) -> str:
+        """Executable name for this provider."""
+
+    @abstractmethod
+    def validate_options(self, options: Mapping[str, str]) -> None:
+        """Reject options this provider does not accept."""
+
     def create_new_session(self) -> NewSession:
         return NewSession()
 

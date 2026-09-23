@@ -9,7 +9,7 @@ from .agent_runner import AgentToolRunner
 from .session_records import bind_prior_session_id, create_workflow_session
 from .selection import stage_dispatch_error
 from .session_store import SessionStore
-from .workflow import WorkflowDocument, load_workflow_document
+from .workflow import WorkflowDocument, load_named_workflow
 
 
 @dataclass(frozen=True)
@@ -109,16 +109,6 @@ def dispatch_named_stage(
         thinking=str(result.get("thinking") or ""),
         artifact_directory=str(result.get("artifact_directory") or ""),
     )
-
-
-def load_named_workflow(workspace: Path, workflow_id: str) -> WorkflowDocument:
-    path = workspace / ".agentflow" / "workflows" / f"{workflow_id}.yaml"
-    if not path.is_file():
-        raise ConfigurationError(f"Workflow not found: {workflow_id}")
-    try:
-        return load_workflow_document(path)
-    except ValueError as exc:
-        raise ConfigurationError(str(exc)) from exc
 
 
 def assert_stage_dispatchable(

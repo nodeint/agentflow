@@ -10,7 +10,8 @@ if str(PACKAGE_ROOT) not in sys.path:
 import tempfile
 import unittest
 
-from agentflow_kernel.workflow import load_workflow_document
+from agentflow_kernel.config import ConfigurationError
+from agentflow_kernel.workflow import load_named_workflow, load_workflow_catalog, load_workflow_document
 
 
 class WorkflowDocumentTests(unittest.TestCase):
@@ -190,6 +191,46 @@ stages:
             )
             with self.assertRaisesRegex(ValueError, "non-negative integer"):
                 load_workflow_document(path)
+
+    def test_catalog_checks_file_ids_and_requires(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            workflows = workspace / ".agentflow" / "workflows"
+            workflows.mkdir(parents=True)
+            (workflows / "plan-review.yaml").write_text(
+                "id: plan-review\n"
+                "stages:\n"
+                "  - id: plan\n"
+                "    role: planner\n"
+                "completion:\n"
+                "  stage: plan\n"
+                "  decision: revise\n",
+                encoding="utf-8",
+            )
+            (workflows / "other.yaml").write_text(
+                "id: renamed\nstages:\n  - id: a\n    role: planner\n",
+                encoding="utf-8",
+            )
+            (workflows / "follow-on.yaml").write_text(
+                "id: follow-on\n"
+                "requires:\n"
+                "  workflow: plan-review\n"
+                "  decision: approved\n"
+                "stages:\n"
+                "  - id: implement\n"
+                "    role: developer\n",
+                encoding="utf-8",
+            )
+            catalog = load_workflow_catalog(workspace)
+            self.assertEqual(tuple(catalog.documents), ("follow-on", "plan-review"))
+            self.assertIn("other.yaml: id is renamed.", catalog.problems)
+            self.assertIn(
+                "follow-on: requires plan-review to complete with approved, "
+                "but it completes with revise.",
+                catalog.problems,
+            )
+            with self.assertRaisesRegex(ConfigurationError, "other.yaml: id is renamed"):
+                load_named_workflow(workspace, "other")
 
     def test_rejects_empty_stage_model_and_thinking(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

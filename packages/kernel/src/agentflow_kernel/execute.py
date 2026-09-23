@@ -14,8 +14,8 @@ from .dispatch import (
     StageDispatchRequest,
     assert_stage_dispatchable,
     dispatch_named_stage,
-    load_named_workflow,
 )
+from .workflow import load_named_workflow
 from .selection import (
     Error as NextStageError,
     NextStage,

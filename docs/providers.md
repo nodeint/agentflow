@@ -21,14 +21,16 @@ CLI.
 
 ## Options
 
-`thinking` is normalized across the supported providers:
+`thinking` is normalized across the supported providers. Each adapter checks
+the value before a turn starts:
 
-- Codex receives it as `model_reasoning_effort`.
-- Grok receives it as `--reasoning-effort`.
-
-All other options remain provider-specific. Codex receives each entry as
-`codex exec -c key=value`. Grok receives each entry as a long flag, with
-underscores converted to hyphens.
+- Codex accepts `minimal`, `low`, `medium`, `high`, and `xhigh`, and sends it
+  as `model_reasoning_effort`. Any other option is a Codex config override
+  passed as `codex exec -c key=value`.
+- Grok accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`,
+  and sends it as `--reasoning-effort`. Grok also accepts `max_turns`, `tools`,
+  `disallowed_tools`, `permission_mode`, `rules`, `allow`, `deny`, and
+  `sandbox`. Other keys are rejected.
 
 ## Selection and overrides
 

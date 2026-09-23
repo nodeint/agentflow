@@ -8,7 +8,7 @@ from typing import Any, Optional
 from .config import ConfigurationError
 from .query import read_status_file
 from .session_store import SessionStore
-from .workflow import WorkflowDocument, load_workflow_document
+from .workflow import WorkflowDocument, load_named_workflow
 
 
 def allocate_session_id(sessions_directory: Path, session_id_base: str) -> str:
@@ -38,13 +38,7 @@ def create_workflow_session(
     task: str,
     prior_session_id: Optional[str] = None,
 ) -> str:
-    workflow_path = workspace / ".agentflow" / "workflows" / f"{workflow_id}.yaml"
-    if not workflow_path.is_file():
-        raise ConfigurationError(f"Workflow not found: {workflow_id}")
-    try:
-        workflow = load_workflow_document(workflow_path)
-    except ValueError as exc:
-        raise ConfigurationError(str(exc)) from exc
+    workflow = load_named_workflow(workspace, workflow_id)
     resolved_prior = resolve_prior_session_id(workspace, workflow, prior_session_id)
     task_summary = task.strip()
     if not task_summary:

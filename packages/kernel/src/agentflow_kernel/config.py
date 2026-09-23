@@ -6,7 +6,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping, Optional
 
-from .workflow import WorkflowDocument, load_workflow_document
+from .workflow import StageSpec, load_named_workflow
 from .yaml_subset import parse_yaml_document
 
 
@@ -63,13 +63,23 @@ def resolve_stage_target(
             model=model,
             options=_thinking_options(thinking),
         )
-    workflow = _load_stage_workflow(workspace, workflow_id)
+    workflow = load_named_workflow(workspace, workflow_id)
     stage = workflow.stages.get(stage_id)
     if stage is None:
         raise ConfigurationError(f"Stage not found: {stage_id}")
     config = load_yaml_mapping(workspace / ".agentflow/config.yaml")
+    return resolve_stage_spec(config, stage, thinking=thinking)
+
+
+def resolve_stage_spec(
+    config: Mapping[str, Any],
+    stage: StageSpec,
+    *,
+    thinking: Optional[str] = None,
+) -> StageTarget:
+    """Resolve one already loaded stage against a config mapping."""
     model_field = (
-        f"stages.{stage_id}.model"
+        f"stages.{stage.id}.model"
         if stage.model_key is not None
         else f"roles.{stage.role}.default_model"
     )
@@ -79,7 +89,7 @@ def resolve_stage_target(
         model_key=stage.model_key,
         model_field=model_field,
         thinking=stage.thinking,
-        thinking_label=f"Stage {stage_id}",
+        thinking_label=f"Stage {stage.id}",
     )
     return StageTarget(
         provider=declared.provider,
@@ -112,14 +122,20 @@ def resolve_role_target(
     return _resolve_role_cascade(config, role, thinking=thinking)
 
 
-def _load_stage_workflow(workspace: Path, workflow_id: str) -> WorkflowDocument:
-    workflow_path = workspace / ".agentflow" / "workflows" / f"{workflow_id}.yaml"
-    if not workflow_path.is_file():
-        raise ConfigurationError(f"Workflow not found: {workflow_id}")
-    try:
-        return load_workflow_document(workflow_path)
-    except ValueError as exc:
-        raise ConfigurationError(str(exc)) from exc
+def load_model_target(config: Mapping[str, Any], model_key: str) -> StageTarget:
+    """Resolve one named model entry without role or stage overrides."""
+    models = _mapping(config.get("models"), "models")
+    model_config = _mapping(models.get(model_key), f"models.{model_key}")
+    if "thinking" in model_config:
+        raise ConfigurationError(
+            f"models.{model_key}.thinking is not supported. "
+            f"Put CLI parameters under models.{model_key}.options."
+        )
+    return StageTarget(
+        provider=_string(model_config.get("provider"), f"models.{model_key}.provider"),
+        model=_string(model_config.get("model"), f"models.{model_key}.model"),
+        options=_options(model_config.get("options"), f"models.{model_key}.options"),
+    )
 
 
 def _resolve_role_cascade(
@@ -133,18 +149,10 @@ def _resolve_role_cascade(
 ) -> StageTarget:
     roles = _mapping(config.get("roles"), "roles")
     role = _mapping(roles.get(role_key), f"roles.{role_key}")
-    models = _mapping(config.get("models"), "models")
     resolved_field = model_field or f"roles.{role_key}.default_model"
     resolved_model_key = _string(model_key or role.get("default_model"), resolved_field)
-    model_config = _mapping(models.get(resolved_model_key), f"models.{resolved_model_key}")
-    if "thinking" in model_config:
-        raise ConfigurationError(
-            f"models.{resolved_model_key}.thinking is not supported. "
-            f"Put CLI parameters under models.{resolved_model_key}.options."
-        )
-    provider = _string(model_config.get("provider"), f"models.{resolved_model_key}.provider")
-    native_model = _string(model_config.get("model"), f"models.{resolved_model_key}.model")
-    options = _options(model_config.get("options"), f"models.{resolved_model_key}.options")
+    target = load_model_target(config, resolved_model_key)
+    options = dict(target.options)
     role_thinking = role.get("thinking")
     if isinstance(role_thinking, str):
         options["thinking"] = _string(role_thinking, f"roles.{role_key}.thinking")
@@ -152,7 +160,7 @@ def _resolve_role_cascade(
         options["thinking"] = _string(
             thinking, thinking_label or f"roles.{role_key}.thinking"
         )
-    return StageTarget(provider=provider, model=native_model, options=options)
+    return StageTarget(provider=target.provider, model=target.model, options=options)
 
 
 def _mapping(value: Any, field: str) -> dict[str, Any]:

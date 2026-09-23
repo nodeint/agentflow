@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, NoReturn, Optional
 
 from .yaml_subset import parse_yaml_document
 
@@ -51,6 +51,63 @@ class WorkflowDocument:
     constraints: tuple[str, ...] = ()
 
 
+def workflows_directory(workspace: Path) -> Path:
+    return workspace / ".agentflow" / "workflows"
+
+
+def load_named_workflow(workspace: Path, workflow_id: str) -> WorkflowDocument:
+    """Load `.agentflow/workflows/<id>.yaml` and require that file's id to match."""
+    path = workflows_directory(workspace) / f"{workflow_id}.yaml"
+    if not path.is_file():
+        _fail(f"Workflow not found: {workflow_id}")
+    document = _read_workflow_file(path)
+    if path.stem != document.id:
+        _fail(f"{path.name}: id is {document.id}.")
+    if not document.stages:
+        _fail(f"{document.id}: declares no stages.")
+    return document
+
+
+@dataclass(frozen=True)
+class WorkflowCatalog:
+    documents: dict[str, WorkflowDocument]
+    problems: tuple[str, ...]
+
+
+def load_workflow_catalog(workspace: Path) -> WorkflowCatalog:
+    """Load every workflow file and check ids, stages, and requires."""
+    directory = workflows_directory(workspace)
+    if not directory.is_dir():
+        return WorkflowCatalog(
+            {},
+            ("Workflows directory not found: .agentflow/workflows",),
+        )
+    paths = sorted(path for path in directory.glob("*.yaml") if path.is_file())
+    if not paths:
+        return WorkflowCatalog({}, ("No workflows in .agentflow/workflows.",))
+
+    from .config import ConfigurationError
+
+    documents: dict[str, WorkflowDocument] = {}
+    problems: list[str] = []
+    for path in paths:
+        try:
+            document = _read_workflow_file(path)
+        except ConfigurationError as exc:
+            problems.append(f"{path.name}: {exc}")
+            continue
+        if path.stem != document.id:
+            problems.append(f"{path.name}: id is {document.id}.")
+            continue
+        documents[document.id] = document
+        if not document.stages:
+            problems.append(f"{document.id}: declares no stages.")
+    for workflow_id, document in documents.items():
+        if document.requires is not None:
+            _check_requires(workflow_id, document.requires, documents, directory, problems)
+    return WorkflowCatalog(documents, tuple(problems))
+
+
 def load_workflow_document(path: Path) -> WorkflowDocument:
     try:
         text = path.read_text(encoding="utf-8")
@@ -92,6 +149,48 @@ def load_stage(workspace: Path, workflow_path: str, stage_id: str) -> Optional[S
 def stage_artifact_name(workspace: Path, workflow_path: str, stage_id: str) -> Optional[str]:
     stage = load_stage(workspace, workflow_path, stage_id)
     return None if stage is None else stage.artifact
+
+
+def _read_workflow_file(path: Path) -> WorkflowDocument:
+    try:
+        return load_workflow_document(path)
+    except ValueError as exc:
+        _fail(str(exc), exc)
+
+
+def _check_requires(
+    workflow_id: str,
+    requires: WorkflowRequires,
+    documents: dict[str, WorkflowDocument],
+    directory: Path,
+    problems: list[str],
+) -> None:
+    required = documents.get(requires.workflow)
+    if required is None:
+        required_path = directory / f"{requires.workflow}.yaml"
+        if required_path.is_file():
+            problems.append(f"{workflow_id}: requires {requires.workflow}, which failed to load.")
+        else:
+            problems.append(
+                f"{workflow_id}: requires workflow {requires.workflow}, "
+                "which is not in .agentflow/workflows."
+            )
+        return
+    decision = None if required.completion is None else required.completion.decision
+    if decision is None or decision.lower() != requires.decision:
+        actual = "no decision" if decision is None else decision
+        problems.append(
+            f"{workflow_id}: requires {requires.workflow} to complete with "
+            f"{requires.decision}, but it completes with {actual}."
+        )
+
+
+def _fail(message: str, exc: Optional[BaseException] = None) -> NoReturn:
+    from .config import ConfigurationError
+
+    if exc is None:
+        raise ConfigurationError(message)
+    raise ConfigurationError(message) from exc
 
 
 def _parse_stages(raw: Any) -> dict[str, StageSpec]:

@@ -32,6 +32,18 @@ ceiling. Revision limits are defined by `max_revisions` in the workflow.
 Workflow commands write progress to stderr and one JSON result to stdout. Run
 `agentflow <command> --help` for its fields, stop reasons, and exit codes.
 
+## Doctor
+
+```bash
+agentflow doctor
+agentflow doctor --json
+```
+
+`doctor` checks `.agentflow/config.yaml`, every file in `.agentflow/workflows/`,
+and whether each provider CLI named in config is on `PATH`. It does not run
+those CLIs or check their login. Exit 0 when every check passes, and exit 1
+when a check fails.
+
 ## Session commands
 
 ```bash

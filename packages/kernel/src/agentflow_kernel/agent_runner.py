@@ -66,6 +66,7 @@ class AgentToolRunner:
             raise ValueError(f"Unsupported CLI provider: {provider}. Supported: {supported}")
 
         resolved_options = dict(options or {})
+        adapter.validate_options(resolved_options)
         thinking = resolved_options.get("thinking") or None
         store = SessionStore(workspace_path)
         record, is_new, context = store.load_or_create(
