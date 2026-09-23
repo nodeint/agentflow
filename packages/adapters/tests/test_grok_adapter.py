@@ -94,6 +94,20 @@ class GrokAdapterTests(unittest.TestCase):
         self.assertEqual(text, "status: complete\n\n# Plan")
         self.assertEqual(parse_stage_outcome(text, required=True).status, "complete")
 
+    def test_reads_models_from_grok_models_output(self) -> None:
+        catalog = GrokAdapter().parse_model_catalog(
+            "You are logged in with grok.com.\n"
+            "\n"
+            "Default model: grok-4.7\n"
+            "\n"
+            "Available models:\n"
+            "  * grok-4.7 (default)\n"
+            "  - grok-4.6\n"
+        )
+        self.assertEqual(catalog.ids, ("grok-4.7", "grok-4.6"))
+        self.assertEqual(catalog.default_id, "grok-4.7")
+        self.assertEqual(GrokAdapter().model_catalog_command(), ["grok", "models"])
+
     def test_rejects_an_unknown_option_and_a_bad_thinking_value(self) -> None:
         adapter = GrokAdapter()
         with self.assertRaisesRegex(ValueError, "temperature is not a grok option"):

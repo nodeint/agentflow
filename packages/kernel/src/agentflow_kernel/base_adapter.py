@@ -18,7 +18,16 @@ class NewSession:
     agent_id_source: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class ModelCatalog:
+    ids: tuple[str, ...]
+    default_id: Optional[str] = None
+
+
 class BaseCLIAdapter(ABC):
+    display_name = ""
+    thinking_values: tuple[str, ...] = ()
+
     @property
     @abstractmethod
     def command(self) -> str:
@@ -27,6 +36,15 @@ class BaseCLIAdapter(ABC):
     @abstractmethod
     def validate_options(self, options: Mapping[str, str]) -> None:
         """Reject options this provider does not accept."""
+
+    def model_catalog_command(self) -> List[str]:
+        """Argv that prints this provider's model catalog."""
+        raise ValueError(f"{self.command} does not list models.")
+
+    def parse_model_catalog(self, stdout: str) -> ModelCatalog:
+        """Read model ids from the catalog command's stdout."""
+        del stdout
+        raise ValueError(f"{self.command} does not list models.")
 
     def create_new_session(self) -> NewSession:
         return NewSession()

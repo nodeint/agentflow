@@ -8,6 +8,7 @@ dependencies = [
     "agentflow-adapters",
     "rich>=15.0.0",
     "typer>=0.20",
+    "inquirerpy>=0.3.4",
 ]
 
 [project.scripts]

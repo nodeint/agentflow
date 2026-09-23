@@ -5,12 +5,13 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
-from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec
+from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec, ModelCatalog
 from agentflow_kernel.provider_events import classify_provider_error, provider_error_message
 
 
 class CodexAdapter(BaseCLIAdapter):
     command = "codex"
+    display_name = "Codex"
 
     def build_command(
         self,
@@ -46,6 +47,28 @@ class CodexAdapter(BaseCLIAdapter):
             # Passing `--sandbox` together is rejected by current `codex exec`.
             cmd.extend(["--approve-for-me", "-"])
         return CommandSpec(argv=cmd, stdin=prompt)
+
+    def model_catalog_command(self) -> list[str]:
+        return [self.command, "debug", "models"]
+
+    def parse_model_catalog(self, stdout: str) -> ModelCatalog:
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError as exc:
+            raise ValueError("codex model catalog is not JSON.") from exc
+        models = payload.get("models") if isinstance(payload, dict) else None
+        if not isinstance(models, list):
+            raise ValueError("codex model catalog has no models.")
+        ids: list[str] = []
+        for item in models:
+            if not isinstance(item, dict) or item.get("visibility") not in {None, "list"}:
+                continue
+            slug = item.get("slug")
+            if isinstance(slug, str) and slug and slug not in ids:
+                ids.append(slug)
+        if not ids:
+            raise ValueError("codex model catalog is empty.")
+        return ModelCatalog(tuple(ids))
 
     def validate_options(self, options: Mapping[str, str]) -> None:
         for key, value in options.items():
@@ -128,6 +151,7 @@ class CodexAdapter(BaseCLIAdapter):
 
 
 _CODEX_THINKING = ("minimal", "low", "medium", "high", "xhigh")
+CodexAdapter.thinking_values = _CODEX_THINKING
 _OPTION_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_.-]*")
 
 

@@ -32,6 +32,27 @@ ceiling. Revision limits are defined by `max_revisions` in the workflow.
 Workflow commands write progress to stderr and one JSON result to stdout. Run
 `agentflow <command> --help` for its fields, stop reasons, and exit codes.
 
+## Init
+
+```bash
+agentflow init
+agentflow init --provider codex --model gpt-5
+agentflow init --preset plan-review --provider codex --model gpt-5
+```
+
+`init` writes `.agentflow/config.yaml`, one workflow, and `.agentflow/.gitignore`.
+The config contains the provider and model you choose. Model ids come from
+that provider's CLI, not from a built-in list. Thinking is omitted, so
+the provider CLI keeps its own default. Pass `--thinking` only to set
+`options.thinking`. The default workflow is `implement`, a single developer
+stage. `--preset plan-review` writes a planner and a reviewer. In a terminal,
+provider, model, and thinking are chosen from lists, and `plan-review` can assign the
+reviewer a second model. Pass `--provider` and `--model` together when input
+is not a terminal.
+
+An existing valid project is left unchanged. A partial `.agentflow/` directory
+stops init and lists the files in the way.
+
 ## Doctor
 
 ```bash

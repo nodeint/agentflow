@@ -131,6 +131,29 @@ def print_notice(message: str) -> None:
     _stderr().print(line)
 
 
+def print_created(paths: tuple[str, ...], next_command: str) -> None:
+    console = _stdout()
+    console.print("Created:")
+    for path in paths:
+        console.print(f"  {path}")
+    console.print("Next:")
+    console.print(f"  {next_command}")
+
+
+def print_already_initialized() -> None:
+    _stdout().print("Already initialized.")
+
+
+def print_init_conflicts(paths: tuple[str, ...]) -> None:
+    console = _stderr()
+    line = Text()
+    line.append("agentflow: ", style="bold red")
+    line.append("existing files block init.")
+    console.print(line)
+    for path in paths:
+        console.print(f"  {path}")
+
+
 def print_doctor(checks: tuple[Any, ...]) -> None:
     console = _stdout()
     for check in checks:

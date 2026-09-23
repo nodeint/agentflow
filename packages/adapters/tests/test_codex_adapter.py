@@ -14,6 +14,20 @@ from agentflow_adapters.codex_adapter import CodexAdapter
 
 
 class CodexAdapterTests(unittest.TestCase):
+    def test_reads_listed_models_from_the_codex_catalog(self) -> None:
+        catalog = CodexAdapter().parse_model_catalog(
+            '{"models":['
+            '{"slug":"gpt-5","visibility":"list"},'
+            '{"slug":"internal","visibility":"hide"}'
+            "]}"
+        )
+        self.assertEqual(catalog.ids, ("gpt-5",))
+        self.assertIsNone(catalog.default_id)
+        self.assertEqual(
+            CodexAdapter().model_catalog_command(),
+            ["codex", "debug", "models"],
+        )
+
     def test_rejects_a_thinking_value_codex_does_not_accept(self) -> None:
         with self.assertRaisesRegex(
             ValueError,

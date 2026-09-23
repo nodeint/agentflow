@@ -5,12 +5,13 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
-from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec
+from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec, ModelCatalog
 from agentflow_kernel.provider_events import classify_provider_error, provider_error_message
 
 
 class GrokAdapter(BaseCLIAdapter):
     command = "grok"
+    display_name = "Grok"
 
     def __init__(self) -> None:
         self._tool_calls: Dict[str, Dict[str, Any]] = {}
@@ -48,6 +49,34 @@ class GrokAdapter(BaseCLIAdapter):
         elif new_agent_id:
             cmd.extend(["--session-id", new_agent_id])
         return CommandSpec(argv=cmd)
+
+    def model_catalog_command(self) -> list[str]:
+        return [self.command, "models"]
+
+    def parse_model_catalog(self, stdout: str) -> ModelCatalog:
+        ids: list[str] = []
+        default_id = None
+        in_list = False
+        for raw in stdout.splitlines():
+            line = raw.strip()
+            if line.lower().startswith("default model:"):
+                default_id = line.split(":", 1)[1].strip()
+                continue
+            if line.lower().startswith("available models"):
+                in_list = True
+                continue
+            if not in_list or not line.startswith(("*", "-")):
+                continue
+            name = line[1:].strip().split()[0]
+            if name and name not in ids:
+                ids.append(name)
+            if "(default)" in line:
+                default_id = name
+        if not ids:
+            raise ValueError("grok model catalog is empty.")
+        if default_id not in ids:
+            default_id = None
+        return ModelCatalog(tuple(ids), default_id)
 
     def validate_options(self, options: Mapping[str, str]) -> None:
         for key, value in options.items():
@@ -139,6 +168,7 @@ class GrokAdapter(BaseCLIAdapter):
 
 
 _GROK_THINKING = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+GrokAdapter.thinking_values = _GROK_THINKING
 _GROK_PERMISSION_MODES = (
     "default",
     "acceptEdits",
