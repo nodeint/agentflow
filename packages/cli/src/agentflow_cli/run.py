@@ -13,6 +13,7 @@ from .commands.doctor import doctor_app, run_doctor
 from .commands.init import init_app, run_init
 from .commands.execute import execute_workflow, workflow_commands
 from .commands.sessions import list_sessions, sessions_app
+from .commands.skill import install_skill, skill_app, update_skill
 from .commands.watch import watch_app, watch_session
 from .display import print_error
 from .workspace import (
@@ -42,6 +43,7 @@ app.add_typer(agent_app, name="agent")
 app.add_typer(watch_app, name="watch")
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(init_app, name="init")
+app.add_typer(skill_app, name="skill")
 
 __all__ = [
     "app",
@@ -54,6 +56,8 @@ __all__ = [
     "resolve_prompt",
     "run_doctor",
     "run_init",
+    "install_skill",
+    "update_skill",
     "watch_session",
 ]
 

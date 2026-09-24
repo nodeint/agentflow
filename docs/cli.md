@@ -53,6 +53,22 @@ is not a terminal.
 An existing valid project is left unchanged. A partial `.agentflow/` directory
 stops init and lists the files in the way.
 
+## Project skill
+
+```bash
+agentflow skill install
+agentflow skill update
+```
+
+`skill install` writes the bundled Agentflow usage skill to
+`.agents/skills/agentflow/` in the configured project. It refuses to replace an
+existing directory.
+
+`skill update` refreshes a skill previously installed by Agentflow. It refuses
+to overwrite local changes; use `agentflow skill update --force` when replacing
+those changes is intentional. The installed template metadata is kept beside
+`SKILL.md` in `.agentflow-template.json`.
+
 ## Doctor
 
 ```bash
