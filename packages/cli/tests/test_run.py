@@ -145,7 +145,7 @@ class ListRunsTests(unittest.TestCase):
                     "older",
                     {
                         "updated_at": "2026-09-19T00:00:00+00:00",
-                        "workflow_id": "plan-review",
+                        "workflow_id": "plan",
                         "status": "completed",
                         "latest_execution_id": "0001",
                         "latest_decision": "approved",
@@ -183,7 +183,7 @@ class ListRunsTests(unittest.TestCase):
             self.assertIn("plan-implement", text)
             self.assertIn("not started", text)
             self.assertIn("new task", text)
-            self.assertIn("plan-review", text)
+            self.assertIn("plan", text)
             self.assertIn("0001", text)
             self.assertIn("approved", text)
             self.assertIn("old task", text)
@@ -199,7 +199,7 @@ class ListRunsTests(unittest.TestCase):
 class ExecuteWorkflowTests(unittest.TestCase):
     def test_execute_completes_plan_review_and_publishes_plan(self) -> None:
         workspace = write_fake_workflow_workspace(
-            {"plan-review": repo_workflow_text("plan-review")}
+            {"plan": repo_workflow_text("plan")}
         )
         adapter = ScriptedAdapter(
             [
@@ -210,7 +210,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         )
         code, objects = _run_execute(
             workspace,
-            ["start", "plan-review", "--task", "Write a plan"],
+            ["start", "plan", "--task", "Write a plan"],
             adapter,
         )
         self.assertEqual(code, 0)
@@ -232,7 +232,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
 
     def test_execute_reruns_plan_then_review_after_revise(self) -> None:
         workspace = write_fake_workflow_workspace(
-            {"plan-review": repo_workflow_text("plan-review")}
+            {"plan": repo_workflow_text("plan")}
         )
         adapter = ScriptedAdapter(
             [
@@ -245,7 +245,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         )
         code, objects = _run_execute(
             workspace,
-            ["start", "plan-review", "--task", "Write a plan"],
+            ["start", "plan", "--task", "Write a plan"],
             adapter,
         )
         self.assertEqual(code, 0)
@@ -257,12 +257,12 @@ class ExecuteWorkflowTests(unittest.TestCase):
 
     def test_execute_requires_prior_session_then_completes_plan_implement(self) -> None:
         requiring = (
-            "requires:\n  workflow: plan-review\n  decision: approved\n"
+            "requires:\n  workflow: plan\n  decision: approved\n"
             + repo_workflow_text("plan-implement")
         )
         workspace = write_fake_workflow_workspace(
             {
-                "plan-review": repo_workflow_text("plan-review"),
+                "plan": repo_workflow_text("plan"),
                 "plan-implement": requiring,
             }
         )
@@ -284,7 +284,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         self.assertFalse((workspace / ".agentflow" / "sessions").exists())
         prior_code, prior_objects = _run_execute(
             workspace,
-            ["start", "plan-review", "--task", "Write a plan"],
+            ["start", "plan", "--task", "Write a plan"],
             ScriptedAdapter(
                 [
                     "status: complete\n\nplanned",
@@ -338,7 +338,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
 
     def test_execute_session_id_on_terminal_sessions_does_not_dispatch(self) -> None:
         workspace = write_fake_workflow_workspace(
-            {"plan-review": repo_workflow_text("plan-review")}
+            {"plan": repo_workflow_text("plan")}
         )
         blocked_adapter = ScriptedAdapter(
             [
@@ -349,7 +349,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
         )
         code, objects = _run_execute(
             workspace,
-            ["start", "plan-review", "--task", "Write a plan"],
+            ["start", "plan", "--task", "Write a plan"],
             blocked_adapter,
         )
         self.assertEqual(code, 1)
@@ -388,11 +388,11 @@ class ExecuteWorkflowTests(unittest.TestCase):
         )
 
         completed_workspace = write_fake_workflow_workspace(
-            {"plan-review": repo_workflow_text("plan-review")}
+            {"plan": repo_workflow_text("plan")}
         )
         done_code, done_objects = _run_execute(
             completed_workspace,
-            ["start", "plan-review", "--task", "Write a plan"],
+            ["start", "plan", "--task", "Write a plan"],
             ScriptedAdapter(
                 [
                     "status: complete\n\nplanned",
@@ -441,7 +441,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
 
     def test_retry_budget_keeps_session_active_and_stage_can_continue(self) -> None:
         workspace = write_fake_workflow_workspace(
-            {"plan-review": repo_workflow_text("plan-review")}
+            {"plan": repo_workflow_text("plan")}
         )
         adapter = ScriptedAdapter(
             ["status: complete\n\nplanned", "not a header"],
@@ -451,7 +451,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
             workspace,
             [
                 "start",
-                "plan-review",
+                "plan",
                 "--task",
                 "Write a plan",
                 "--attempts",
@@ -477,7 +477,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
 
     def test_retry_budget_is_retained_across_execute_invocations(self) -> None:
         workspace = write_fake_workflow_workspace(
-            {"plan-review": repo_workflow_text("plan-review")}
+            {"plan": repo_workflow_text("plan")}
         )
         first = ScriptedAdapter(
             ["status: complete\n\nplanned", "not a header"],
@@ -487,7 +487,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
             workspace,
             [
                 "start",
-                "plan-review",
+                "plan",
                 "--task",
                 "Write a plan",
                 "--attempts",
@@ -512,20 +512,20 @@ class ExecuteWorkflowTests(unittest.TestCase):
 
     def test_rejects_a_non_positive_max_attempts(self) -> None:
         workspace = write_fake_workflow_workspace(
-            {"plan-review": repo_workflow_text("plan-review")}
+            {"plan": repo_workflow_text("plan")}
         )
         with self.assertRaisesRegex(ConfigurationError, "--attempts"):
             execute_workflow(
                 workspace,
                 action="start",
-                workflow_id="plan-review",
+                workflow_id="plan",
                 task="Write a plan",
                 max_attempts=0,
             )
 
     def test_stage_id_runs_the_first_stage_and_stops(self) -> None:
         workspace = write_fake_workflow_workspace(
-            {"plan-review": repo_workflow_text("plan-review")}
+            {"plan": repo_workflow_text("plan")}
         )
         adapter = ScriptedAdapter(
             [
@@ -539,7 +539,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
             [
                 "stage",
                 "--workflow",
-                "plan-review",
+                "plan",
                 "--task",
                 "Write a plan",
             ],
@@ -553,14 +553,14 @@ class ExecuteWorkflowTests(unittest.TestCase):
 
     def test_stage_id_of_a_later_stage_creates_no_session(self) -> None:
         workspace = write_fake_workflow_workspace(
-            {"plan-review": repo_workflow_text("plan-review")}
+            {"plan": repo_workflow_text("plan")}
         )
         adapter = ScriptedAdapter(
             ["status: complete\ndecision: approved\n\nok"], artifacts=[None]
         )
         code, objects = _run_execute(
             workspace,
-            ["stage", "--workflow", "plan-review", "--task", "Write a plan"],
+            ["stage", "--workflow", "plan", "--task", "Write a plan"],
             adapter,
         )
         self.assertEqual(code, 0)
@@ -569,7 +569,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
 
     def test_stage_id_follows_eligibility_after_the_first_stage(self) -> None:
         workspace = write_fake_workflow_workspace(
-            {"plan-review": repo_workflow_text("plan-review")}
+            {"plan": repo_workflow_text("plan")}
         )
         first = ScriptedAdapter(
             ["status: complete\n\nplanned"], artifacts=["# Plan\n"]
@@ -579,7 +579,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
             [
                 "stage",
                 "--workflow",
-                "plan-review",
+                "plan",
                 "--task",
                 "Write a plan",
             ],
@@ -615,7 +615,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
                 [
                     "stage",
                     "--workflow",
-                    "plan-review",
+                    "plan",
                     "--task",
                     "Write a plan",
                     "--attempts",
@@ -632,7 +632,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
                 [
                     "stage",
                     "--workflow",
-                    "plan-review",
+                    "plan",
                     "--task",
                     "Write a plan",
                     "--max-dispatches",

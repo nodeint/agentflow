@@ -24,7 +24,7 @@ from tests.support import ScriptedAdapter, write_plan_review_session
 
 def _plan_review() -> WorkflowDocument:
     return WorkflowDocument(
-        id="plan-review",
+        id="plan",
         stages={
             "plan": StageSpec(id="plan", role="planner", artifact="plan.md"),
             "review-plan": StageSpec(
@@ -47,7 +47,7 @@ class OutputPublicationTests(unittest.TestCase):
         approved = StageOutcome(status="complete", decision="approved")
         self.assertTrue(
             should_publish_outputs(
-                workflow_id="plan-review",
+                workflow_id="plan",
                 execution_status="completed",
                 outcome=approved,
                 workflow=workflow,
@@ -56,7 +56,7 @@ class OutputPublicationTests(unittest.TestCase):
         )
         self.assertFalse(
             should_publish_outputs(
-                workflow_id="plan-review",
+                workflow_id="plan",
                 execution_status="completed",
                 outcome=StageOutcome(status="complete", decision="revise"),
                 workflow=workflow,

@@ -148,7 +148,7 @@ reusable processes—for example, plan approval from implementation:
 ```yaml
 id: implement
 requires:
-  workflow: plan-review
+  workflow: plan
   decision: approved
 ```
 
@@ -157,5 +157,5 @@ Start it with the completed prerequisite session:
 ```bash
 agentflow start implement \
   --task "Build the approved plan" \
-  --prior <plan-review-session-id>
+  --prior <plan-session-id>
 ```

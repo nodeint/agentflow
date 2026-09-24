@@ -87,8 +87,8 @@ class DoctorTests(unittest.TestCase):
             workspace = Path(tmp)
             _write_stage_project(workspace)
             workflows_dir = workspace / ".agentflow" / "workflows"
-            (workflows_dir / "plan-review.yaml").write_text(
-                "id: plan-review\n"
+            (workflows_dir / "plan.yaml").write_text(
+                "id: plan\n"
                 "stages:\n"
                 "  - id: plan\n"
                 "    role: missing-role\n"
@@ -100,7 +100,7 @@ class DoctorTests(unittest.TestCase):
             (workflows_dir / "follow-on.yaml").write_text(
                 "id: follow-on\n"
                 "requires:\n"
-                "  workflow: plan-review\n"
+                "  workflow: plan\n"
                 "  decision: approved\n"
                 "stages:\n"
                 "  - id: implement\n"
@@ -114,14 +114,14 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(config.ok)
         self.assertFalse(workflows.ok)
         self.assertIn("plan-implement", workflows.items)
-        self.assertNotIn("plan-review", workflows.items)
+        self.assertNotIn("plan", workflows.items)
         self.assertNotIn("follow-on", workflows.items)
         self.assertIn(
-            "plan-review.plan: Missing or invalid roles.missing-role.",
+            "plan.plan: Missing or invalid roles.missing-role.",
             workflows.problems,
         )
         self.assertIn(
-            "follow-on: requires plan-review to complete with approved, "
+            "follow-on: requires plan to complete with approved, "
             "but it completes with revise.",
             workflows.problems,
         )

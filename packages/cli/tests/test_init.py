@@ -168,19 +168,19 @@ class InitCommandTests(unittest.TestCase):
                 workspace,
                 provider="codex",
                 model="gpt-5",
-                preset="plan-review",
+                preset="plan",
                 run_command=_run_command,
                 which=_which({"codex"}),
             )
             config = (workspace / ".agentflow" / "config.yaml").read_text(encoding="utf-8")
             workflow = (
-                workspace / ".agentflow" / "workflows" / "plan-review.yaml"
+                workspace / ".agentflow" / "workflows" / "plan.yaml"
             ).read_text(encoding="utf-8")
             self.assertEqual(code, 0)
             self.assertIn("planner:", config)
             self.assertIn("reviewer:", config)
             self.assertNotIn("\n  review:", config)
-            self.assertIn("id: plan-review", workflow)
+            self.assertIn("id: plan", workflow)
             self.assertIn("revise: plan", workflow)
 
     def test_interactive_plan_review_can_choose_a_second_model(self) -> None:
@@ -188,7 +188,7 @@ class InitCommandTests(unittest.TestCase):
             workspace = Path(tmp)
             code = run_init(
                 workspace,
-                preset="plan-review",
+                preset="plan",
                 interactive=True,
                 run_command=_run_command,
                 which=_which({"codex", "grok"}),

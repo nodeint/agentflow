@@ -29,10 +29,10 @@ class ExecuteTests(unittest.TestCase):
     def test_plan_review_publishes_the_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
-            write_workspace(workspace, GROK_CONFIG, {"plan-review": PLAN_REVIEW})
+            write_workspace(workspace, GROK_CONFIG, {"plan": PLAN_REVIEW})
             code, objects, stderr = run_main(
                 workspace,
-                ["start", "plan-review", "--task", "Write a plan"],
+                ["start", "plan", "--task", "Write a plan"],
             )
             self.assertEqual(code, 0, stderr)
             result = objects[0]

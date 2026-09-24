@@ -41,7 +41,7 @@ roles:
 """
 
 PLAN_REVIEW = """\
-id: plan-review
+id: plan
 description: Write and approve a plan before implementation.
 stages:
   - id: plan

@@ -50,7 +50,7 @@ def _workflow() -> WorkflowDocument:
                 resume_from="implement",
             ),
         },
-        requires=WorkflowRequires(workflow="plan-review", decision="approved"),
+        requires=WorkflowRequires(workflow="plan", decision="approved"),
     )
 
 
@@ -124,7 +124,7 @@ class PriorRunTests(unittest.TestCase):
             (session_directory / "status.json").write_text(
                 json.dumps(
                     {
-                        "workflow_id": "plan-review",
+                        "workflow_id": "plan",
                         "status": "completed",
                         "latest_decision": "revise",
                     }
@@ -136,7 +136,7 @@ class PriorRunTests(unittest.TestCase):
             (session_directory / "status.json").write_text(
                 json.dumps(
                     {
-                        "workflow_id": "plan-review",
+                        "workflow_id": "plan",
                         "status": "completed",
                         "latest_decision": "approved",
                     }
@@ -188,7 +188,7 @@ class AgentRunGuardTests(unittest.TestCase):
             session_directory = workspace / ".agentflow" / "sessions" / "wf"
             session_directory.mkdir(parents=True)
             (session_directory / "status.json").write_text(
-                json.dumps({"workflow_id": "plan-review"}), encoding="utf-8"
+                json.dumps({"workflow_id": "plan"}), encoding="utf-8"
             )
             with self.assertRaisesRegex(ConfigurationError, "was not created by agent"):
                 require_agent_session(workspace, "wf")
@@ -196,7 +196,7 @@ class AgentRunGuardTests(unittest.TestCase):
 
 class NextStageTests(unittest.TestCase):
     def test_plan_review_walk(self) -> None:
-        workflow = _repo_workflow("plan-review")
+        workflow = _repo_workflow("plan")
         cases = (
             ("empty", [], "active", NextStage("plan")),
             ("after plan", [_snapshot("plan", 1)], "active", NextStage("review-plan")),
@@ -288,7 +288,7 @@ class NextStageTests(unittest.TestCase):
                 )
 
     def test_failed_latest_retries_that_stage(self) -> None:
-        workflow = _repo_workflow("plan-review")
+        workflow = _repo_workflow("plan")
         self.assertEqual(
             next_stage(
                 workflow,
@@ -320,7 +320,7 @@ class NextStageTests(unittest.TestCase):
 
     def test_running_execution_is_an_error(self) -> None:
         result = next_stage(
-            _repo_workflow("plan-review"),
+            _repo_workflow("plan"),
             [_snapshot("plan", 1, status="running", outcome_status=None)],
             "active",
         )

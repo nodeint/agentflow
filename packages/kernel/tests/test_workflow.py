@@ -17,7 +17,7 @@ from agentflow_kernel.workflow import load_named_workflow, load_workflow_catalog
 class WorkflowDocumentTests(unittest.TestCase):
     def test_loads_repo_instructions_and_constraints(self) -> None:
         workflows = PACKAGE_ROOT / "tests" / "fixtures" / "workflows"
-        review = load_workflow_document(workflows / "plan-review.yaml")
+        review = load_workflow_document(workflows / "plan.yaml")
         implement = load_workflow_document(workflows / "plan-implement.yaml")
         self.assertEqual(
             review.constraints,
@@ -62,7 +62,7 @@ class WorkflowDocumentTests(unittest.TestCase):
                 """\
 id: plan-implement
 requires:
-  workflow: plan-review
+  workflow: plan
   decision: approved
 stages:
   - id: implement
@@ -90,7 +90,7 @@ stages:
                 encoding="utf-8",
             )
             document = load_workflow_document(path)
-        self.assertEqual(document.requires.workflow, "plan-review")
+        self.assertEqual(document.requires.workflow, "plan")
         self.assertEqual(document.requires.decision, "approved")
         self.assertEqual(document.stages["review-work"].routes["approved"], "write-tests")
         self.assertEqual(document.stages["write-tests"].resume_from, "implement")
@@ -197,8 +197,8 @@ stages:
             workspace = Path(tmp)
             workflows = workspace / ".agentflow" / "workflows"
             workflows.mkdir(parents=True)
-            (workflows / "plan-review.yaml").write_text(
-                "id: plan-review\n"
+            (workflows / "plan.yaml").write_text(
+                "id: plan\n"
                 "stages:\n"
                 "  - id: plan\n"
                 "    role: planner\n"
@@ -214,7 +214,7 @@ stages:
             (workflows / "follow-on.yaml").write_text(
                 "id: follow-on\n"
                 "requires:\n"
-                "  workflow: plan-review\n"
+                "  workflow: plan\n"
                 "  decision: approved\n"
                 "stages:\n"
                 "  - id: implement\n"
@@ -222,10 +222,10 @@ stages:
                 encoding="utf-8",
             )
             catalog = load_workflow_catalog(workspace)
-            self.assertEqual(tuple(catalog.documents), ("follow-on", "plan-review"))
+            self.assertEqual(tuple(catalog.documents), ("follow-on", "plan"))
             self.assertIn("other.yaml: id is renamed.", catalog.problems)
             self.assertIn(
-                "follow-on: requires plan-review to complete with approved, "
+                "follow-on: requires plan to complete with approved, "
                 "but it completes with revise.",
                 catalog.problems,
             )

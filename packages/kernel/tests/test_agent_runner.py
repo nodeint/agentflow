@@ -296,10 +296,10 @@ class RunnerTests(unittest.TestCase):
             workspace = Path(tmp)
             workflows = workspace / ".agentflow" / "workflows"
             workflows.mkdir(parents=True)
-            (workflows / "plan-review.yaml").write_text(
-                repo_workflow_text("plan-review"), encoding="utf-8"
+            (workflows / "plan.yaml").write_text(
+                repo_workflow_text("plan"), encoding="utf-8"
             )
-            session_id = create_workflow_session(workspace, "plan-review", "Write a plan")
+            session_id = create_workflow_session(workspace, "plan", "Write a plan")
             status_path = workspace / ".agentflow" / "sessions" / session_id / "status.json"
             status = json.loads(status_path.read_text(encoding="utf-8"))
             status["status"] = "completed"

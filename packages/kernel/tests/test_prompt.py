@@ -106,7 +106,7 @@ class BuildStagePromptTests(unittest.TestCase):
 
     def test_plan_includes_artifact_sentence_and_constraints(self) -> None:
         prompt = build_stage_prompt(
-            workflow=_workflow("plan-review"),
+            workflow=_workflow("plan"),
             stage_id="plan",
             task="Write a plan",
             snapshots=[],
@@ -121,7 +121,7 @@ class BuildStagePromptTests(unittest.TestCase):
             plan_dir = Path(tmp) / "plan-v1"
             plan_dir.mkdir()
             prompt = build_stage_prompt(
-                workflow=_workflow("plan-review"),
+                workflow=_workflow("plan"),
                 stage_id="review-plan",
                 task="Write a plan",
                 snapshots=[_snapshot("plan", 1, plan_dir)],
@@ -138,7 +138,7 @@ class BuildStagePromptTests(unittest.TestCase):
             first.mkdir()
             second.mkdir()
             prompt = build_stage_prompt(
-                workflow=_workflow("plan-review"),
+                workflow=_workflow("plan"),
                 stage_id="review-plan",
                 task="Write a plan",
                 snapshots=[
@@ -198,7 +198,7 @@ class BuildStagePromptTests(unittest.TestCase):
     def test_rejects_an_undeclared_stage(self) -> None:
         with self.assertRaisesRegex(ValueError, "Stage is not declared: missing"):
             build_stage_prompt(
-                workflow=_workflow("plan-review"),
+                workflow=_workflow("plan"),
                 stage_id="missing",
                 task="Write a plan",
                 snapshots=[],

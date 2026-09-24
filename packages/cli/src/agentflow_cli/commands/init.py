@@ -24,7 +24,7 @@ from ..display import (
 from ..workspace import invocation_cwd
 from .doctor import run_doctor
 
-PRESETS = ("implement", "plan-review")
+PRESETS = ("implement", "plan")
 
 init_app = typer.Typer(
     add_completion=False,
@@ -55,7 +55,7 @@ def init_command(
         str,
         typer.Option(
             "--preset",
-            help="Workflow to create: implement or plan-review. Default: implement.",
+            help="Workflow to create: implement or plan. Default: implement.",
         ),
     ] = "implement",
 ) -> None:
@@ -64,9 +64,9 @@ def init_command(
     In a terminal, choose the provider and model from the lists reported by
     the provider CLIs. Pass --provider and --model together when input is
     not a terminal.
-    --preset implement writes one developer stage. plan-review writes a
+    --preset implement writes one developer stage. plan writes a
     planner and a reviewer. A separate reviewer model is asked only in the
-    interactive plan-review flow.
+    interactive plan flow.
     Exit 0 when the project is created or already initialized.
     Exit 1 when existing files conflict or doctor finds a problem.
     Exit 2 when the flags or answers are rejected.
@@ -109,7 +109,7 @@ def run_init(
     prompt = InquirerPrompter() if prompter is None else prompter
     execute = _run_command if run_command is None else run_command
     if preset not in PRESETS:
-        print_error("preset must be implement or plan-review.")
+        print_error("preset must be implement or plan.")
         return 2
     if (provider is None) != (model is None):
         print_error("Pass both --provider and --model, or omit both.")
@@ -256,7 +256,7 @@ def _choices(
         model=model.strip(),
         thinking=_accepted_thinking(adapter, thinking_value),
     )
-    if preset != "plan-review" or not interactive:
+    if preset != "plan" or not interactive:
         return primary, None
     if prompt.confirm("Use the default model for both planner and reviewer?"):
         return primary, None
@@ -382,7 +382,7 @@ def _render_workflow(preset: str) -> str:
             "  stage: implement\n"
         )
     return (
-        "id: plan-review\n"
+        "id: plan\n"
         "stages:\n"
         "  - id: plan\n"
         "    role: planner\n"

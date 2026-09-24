@@ -39,7 +39,7 @@ class DoctorCommandTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("ok", text)
         self.assertIn("developer", text)
-        self.assertIn("plan-review", text)
+        self.assertIn("plan", text)
         self.assertIn("/bin/grok", text)
 
     def test_doctor_json_fails_when_a_provider_command_is_missing(self) -> None:
@@ -88,8 +88,8 @@ def _write_project(workspace: Path) -> None:
         "    default_model: planner-model\n"
     )
     (workspace / ".agentflow" / "config.yaml").write_text(config, encoding="utf-8")
-    (workflows / "plan-review.yaml").write_text(
-        repo_workflow_text("plan-review"), encoding="utf-8"
+    (workflows / "plan.yaml").write_text(
+        repo_workflow_text("plan"), encoding="utf-8"
     )
 
 

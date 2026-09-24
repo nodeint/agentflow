@@ -127,7 +127,7 @@ def _write_prompt_artifact(prompt: str, body: str) -> None:
 
 
 PLAN_REVIEW_WORKFLOW = """\
-id: plan-review
+id: plan
 stages:
   - id: plan
     role: planner
@@ -197,8 +197,8 @@ def write_plan_review_session() -> tuple[Path, str]:
     workspace = Path(tempfile.mkdtemp())
     workflows = workspace / ".agentflow" / "workflows"
     workflows.mkdir(parents=True)
-    (workflows / "plan-review.yaml").write_text(PLAN_REVIEW_WORKFLOW, encoding="utf-8")
-    return workspace, create_workflow_session(workspace, "plan-review", "Write a plan")
+    (workflows / "plan.yaml").write_text(PLAN_REVIEW_WORKFLOW, encoding="utf-8")
+    return workspace, create_workflow_session(workspace, "plan", "Write a plan")
 
 
 def write_config(contents: str) -> Path:

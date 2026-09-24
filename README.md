@@ -35,8 +35,8 @@ agent execution, and its own tools and options.
 
 ```mermaid
 flowchart LR
-    A[Task] --> B[Planner / Codex]
-    B -->|plan.md| C[Reviewer / Grok]
+    A[Task] --> B[Planner(Codex)]
+    B -->|plan.md| C[Reviewer(Grok)]
     C -->|revise| B
     C -->|approved| D[Complete]
 ```
@@ -46,15 +46,16 @@ flowchart LR
 Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), and authenticated
 provider CLIs named by your configuration.
 
-Until packaged releases are available, run Agentflow from a source checkout:
+Install Agentflow in your project (bash or zsh):
 
 ```bash
-uv sync --all-packages
-uv run agentflow --help
+uv add git+ssh://git@github.com/nodeint/agentflow.git@eb7ed1c6be9f91e8b9f8cdafbb9d9f9da8bb89ea#subdirectory=packages/{kernel,adapters,cli}
 ```
 
-The examples below use `agentflow` for readability. When running from the
-checkout, use `uv run agentflow` instead.
+Verify with `uv run agentflow --help`.
+
+The examples below use `agentflow` for readability. With uv, prefix commands
+with `uv run`.
 
 In the project where agents will work, create two files:
 
@@ -62,7 +63,7 @@ In the project where agents will work, create two files:
 .agentflow/
 ├── config.yaml
 └── workflows/
-    └── plan-review.yaml
+    └── plan.yaml
 ```
 
 `.agentflow/config.yaml` assigns provider models to roles:
@@ -90,10 +91,10 @@ roles:
 
 Use model identifiers supported by your installed provider CLIs.
 
-`.agentflow/workflows/plan-review.yaml` defines the process:
+`.agentflow/workflows/plan.yaml` defines the process:
 
 ```yaml
-id: plan-review
+id: plan
 constraints:
   - Do not write implementation code.
 
@@ -130,7 +131,7 @@ completion:
 Run the workflow from that project or any of its subdirectories:
 
 ```bash
-agentflow start plan-review --task "Plan the account settings redesign"
+agentflow start plan --task "Plan the account settings redesign"
 ```
 
 Agentflow runs the next eligible stage until the workflow completes or stops.
