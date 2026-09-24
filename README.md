@@ -203,3 +203,7 @@ and exit codes.
 The workspace contains `agentflow-kernel`, `agentflow-adapters`, and
 `agentflow-cli`. See [CONTRIBUTION.md](CONTRIBUTION.md) for repository layout,
 test conventions, and development commands.
+
+## License
+
+Agentflow is licensed under the [MIT License](LICENSE).

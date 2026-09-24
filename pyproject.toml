@@ -2,6 +2,7 @@
 name = "agentflow-workspace"
 version = "0.0.0"
 description = "Agentflow runner workspace."
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = []
 

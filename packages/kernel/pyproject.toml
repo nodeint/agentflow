@@ -2,6 +2,8 @@
 name = "agentflow-kernel"
 version = "0.1.0"
 description = "Workflow kernel for the Agentflow runner."
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = []
 
