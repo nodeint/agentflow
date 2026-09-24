@@ -35,8 +35,8 @@ agent execution, and its own tools and options.
 
 ```mermaid
 flowchart LR
-    A[Task] --> B[Planner(Codex)]
-    B -->|plan.md| C[Reviewer(Grok)]
+    A[Task] --> B[Planner - Codex]
+    B -->|plan.md| C[Reviewer - Grok]
     C -->|revise| B
     C -->|approved| D[Complete]
 ```
