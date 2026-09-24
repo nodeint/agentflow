@@ -8,7 +8,8 @@ from typing import Dict, List, Optional, Sequence
 AGENTFLOW_DIRNAME = ".agentflow"
 EXECUTIONS_DIRNAME = "executions"
 SESSIONS_DIRNAME = "sessions"
-SESSION_FILENAME = "session.json"
+CONVERSATION_FILENAME = "conversation.json"
+LEGACY_CONVERSATION_FILENAME = "session.json"
 EXECUTION_SCHEMA_VERSION = 1
 
 

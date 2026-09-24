@@ -62,6 +62,50 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(adapter.calls[1]["agent_id"], "native-session-1")
             self.assertEqual(execution["resumes_execution_id"], first["execution_id"])
 
+    def test_writes_conversation_checkpoint(self) -> None:
+        runner = AgentToolRunner(adapters={"fake": FakeAdapter()}, timeout_sec=10)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = runner.run("fake", "m1", "first prompt", tmp)
+            execution_directory = (
+                Path(tmp)
+                / ".agentflow"
+                / "sessions"
+                / result["session_id"]
+                / "executions"
+                / result["execution_id"]
+            )
+
+            self.assertTrue((execution_directory / "conversation.json").is_file())
+            self.assertFalse((execution_directory / "session.json").exists())
+
+    def test_resumes_from_legacy_session_checkpoint(self) -> None:
+        adapter = FakeAdapter()
+        runner = AgentToolRunner(adapters={"fake": adapter}, timeout_sec=10)
+        with tempfile.TemporaryDirectory() as tmp:
+            first = runner.run("fake", "m1", "first prompt", tmp)
+            execution_directory = (
+                Path(tmp)
+                / ".agentflow"
+                / "sessions"
+                / first["session_id"]
+                / "executions"
+                / first["execution_id"]
+            )
+            (execution_directory / "conversation.json").rename(
+                execution_directory / "session.json"
+            )
+
+            runner.run(
+                "fake",
+                "m1",
+                "second prompt",
+                tmp,
+                session_id=first["session_id"],
+                resume_execution_id=first["execution_id"],
+            )
+
+            self.assertEqual(adapter.calls[1]["agent_id"], "native-session-1")
+
     def test_rejects_a_resume_execution_from_another_session(self) -> None:
         runner = AgentToolRunner(adapters={"fake": FakeAdapter()}, timeout_sec=10)
         with tempfile.TemporaryDirectory() as tmp:

@@ -37,10 +37,11 @@ from .process_ownership import (
 )
 from .runtime import (
     AGENTFLOW_DIRNAME,
+    CONVERSATION_FILENAME,
     EXECUTION_SCHEMA_VERSION,
     EXECUTIONS_DIRNAME,
+    LEGACY_CONVERSATION_FILENAME,
     SESSIONS_DIRNAME,
-    SESSION_FILENAME,
     safe_component,
     utc_now,
 )
@@ -97,8 +98,15 @@ class ExecutionContext:
     directory: Path
 
     @property
-    def session_path(self) -> Path:
-        return self.directory / SESSION_FILENAME
+    def conversation_path(self) -> Path:
+        return self.directory / CONVERSATION_FILENAME
+
+    @property
+    def conversation_read_path(self) -> Path:
+        path = self.conversation_path
+        if path.exists():
+            return path
+        return self.directory / LEGACY_CONVERSATION_FILENAME
 
     @property
     def artifact_directory(self) -> Path:
@@ -157,7 +165,7 @@ class SessionStore:
                 True,
                 context,
             )
-        raw = json.loads(previous.session_path.read_text(encoding="utf-8"))
+        raw = json.loads(previous.conversation_read_path.read_text(encoding="utf-8"))
         context = self._create_execution(
             provider,
             model,
@@ -176,7 +184,7 @@ class SessionStore:
         )
 
     def save(self, record: AgentSessionRecord, context: ExecutionContext) -> None:
-        context.session_path.write_text(
+        context.conversation_path.write_text(
             json.dumps(record.to_json(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
@@ -451,8 +459,9 @@ class SessionStore:
             else None,
             status="failed",
         )
-        if context.session_path.exists():
-            raw = json.loads(context.session_path.read_text(encoding="utf-8"))
+        conversation_path = context.conversation_read_path
+        if conversation_path.exists():
+            raw = json.loads(conversation_path.read_text(encoding="utf-8"))
             record = AgentSessionRecord.from_json(
                 raw,
                 record.provider,
