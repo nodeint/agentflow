@@ -46,16 +46,13 @@ flowchart LR
 Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), and authenticated
 provider CLIs named by your configuration.
 
-Install Agentflow in your project (bash or zsh):
+Install Agentflow from any directory:
 
 ```bash
-uv add git+ssh://git@github.com/nodeint/agentflow.git@eb7ed1c6be9f91e8b9f8cdafbb9d9f9da8bb89ea#subdirectory=packages/{kernel,adapters,cli}
+uv tool install --with 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/kernel' --with 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/adapters' 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/cli'
 ```
 
-Verify with `uv run agentflow --help`.
-
-The examples below use `agentflow` for readability. With uv, prefix commands
-with `uv run`.
+Verify with `agentflow --help`.
 
 In the project where agents will work, create two files:
 
