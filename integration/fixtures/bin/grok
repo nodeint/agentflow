@@ -7,17 +7,50 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from reply import response_text, write_artifact
+from reply import record_invocation, response_text, take_step, write_artifact
 
 
 def main() -> None:
+    step = take_step()
+    record_invocation("grok")
     prompt = ""
     if "--prompt-file" in sys.argv:
         index = sys.argv.index("--prompt-file")
         prompt = Path(sys.argv[index + 1]).read_text(encoding="utf-8")
-    write_artifact(prompt)
-    text = response_text(prompt)
-    sys.stdout.write(json.dumps({"type": "text", "data": text}) + "\n")
+    write_artifact(prompt, step)
+    exit_code = int(step.get("exit") or 0)
+    if exit_code:
+        sys.exit(exit_code)
+    text = response_text(prompt, step)
+    events = step.get("events") or "text"
+    if events == "error":
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "type": "error",
+                    "message": step.get("message") or "provider failed",
+                }
+            )
+            + "\n"
+        )
+    elif events == "tool":
+        sys.stdout.write(
+            json.dumps({"type": "text", "data": "I'll update the file.\n"}) + "\n"
+        )
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "type": "tool_call",
+                    "toolCallId": "call-1",
+                    "toolName": "write",
+                    "rawInput": {"path": "note.md"},
+                }
+            )
+            + "\n"
+        )
+        sys.stdout.write(json.dumps({"type": "text", "data": text}) + "\n")
+    else:
+        sys.stdout.write(json.dumps({"type": "text", "data": text}) + "\n")
     sys.stdout.write(
         json.dumps({"type": "end", "sessionId": "fake-grok-session"}) + "\n"
     )

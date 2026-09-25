@@ -7,16 +7,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from reply import response_text, write_artifact
+from reply import record_invocation, response_text, take_step, write_artifact
 
 
 def main() -> None:
+    step = take_step()
+    record_invocation("codex")
     prompt = sys.stdin.read()
-    write_artifact(prompt)
-    text = response_text(prompt)
+    write_artifact(prompt, step)
+    exit_code = int(step.get("exit") or 0)
+    if exit_code:
+        sys.exit(exit_code)
+    text = response_text(prompt, step)
+    file_text = step["file_text"] if "file_text" in step else text
+    stdout_text = step["stdout_text"] if "stdout_text" in step else text
     if "--output-last-message" in sys.argv:
         index = sys.argv.index("--output-last-message")
-        Path(sys.argv[index + 1]).write_text(text, encoding="utf-8")
+        Path(sys.argv[index + 1]).write_text(str(file_text), encoding="utf-8")
     sys.stdout.write(
         json.dumps({"type": "thread.started", "thread_id": "fake-codex-thread"}) + "\n"
     )
@@ -24,7 +31,7 @@ def main() -> None:
         json.dumps(
             {
                 "type": "item.completed",
-                "item": {"type": "agent_message", "text": text},
+                "item": {"type": "agent_message", "text": stdout_text},
             }
         )
         + "\n"
