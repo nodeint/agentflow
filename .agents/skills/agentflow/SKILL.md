@@ -11,8 +11,7 @@ Use Agentflow as the control plane for the project's multi-stage agent workflows
 
 - For an existing project, work from the root containing
   `.agentflow/config.yaml`. To set up a new project, run `agentflow init` from
-  its root and follow the CLI's provider and model prompts or flags. Prompted
-  options are the ones that provider lists for the model you picked.
+  its root and follow the CLI's provider and model prompts or flags.
 - Read `.agentflow/config.yaml` and the relevant file under
   `.agentflow/workflows/` before changing or running a workflow.
 - Run `agentflow doctor` after editing configuration or workflows.

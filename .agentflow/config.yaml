@@ -5,10 +5,16 @@ models:
     options:
       reasoning-effort: medium
 
+  gpt-6-sol:
+    provider: codex
+    model: gpt-6-sol
+    options:
+      model_reasoning_effort: medium
+
 roles:
   developer:
     default_model: grok
   planner:
     default_model: grok
   reviewer:
-    default_model: grok
+    default_model: gpt-6-sol
