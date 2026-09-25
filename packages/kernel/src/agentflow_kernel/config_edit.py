@@ -386,6 +386,7 @@ def patch_config_text(original: str, updated: Mapping[str, Any]) -> str:
     unit = _indent_unit(lines)
     blocks = _parse_blocks(lines, unit)
     edits: list[tuple[int, int, list[str]]] = []
+    _sync_schema_version(lines, updated, edits)
     _sync_models(lines, blocks, current, updated, unit, edits)
     _sync_roles(lines, blocks, current, updated, unit, edits)
     numbered = list(enumerate(edits))
@@ -425,6 +426,7 @@ def _sync_models(
         _sync_scalar(lines, block, "provider", body.get("provider"), f"models.{key}.provider", edits)
         _sync_scalar(lines, block, "model", body.get("model"), f"models.{key}.model", edits)
         _sync_options(lines, block, current_models[key], body, str(key), unit, edits)
+        _drop_removed_scalars(block, current_models[key], body, edits)
     if fresh:
         if section is None:
             edits.append((0, 0, ["models:", *fresh]))
@@ -464,12 +466,54 @@ def _sync_roles(
             edits,
         )
         _sync_role_options(lines, block, current_roles[key], body, str(key), unit, edits)
+        _drop_removed_scalars(block, current_roles[key], body, edits)
     if not fresh:
         return
     if section is None:
         edits.append((len(lines), len(lines), ["roles:", *fresh]))
         return
     edits.append((section.end, section.end, fresh))
+
+
+def _sync_schema_version(
+    lines: list[str],
+    updated: Mapping[str, Any],
+    edits: list[tuple[int, int, list[str]]],
+) -> None:
+    value = updated.get("schema_version")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return
+    rendered = f"schema_version: {value}"
+    for block in _parse_blocks(lines, _indent_unit(lines)):
+        if block.indent != 0 or block.key != "schema_version":
+            continue
+        if _scalar(block.value) == str(value):
+            return
+        edits.append((block.line, block.line + 1, [_with_value(lines[block.line], str(value))]))
+        return
+    insert = next(
+        (index for index, line in enumerate(lines) if _content_indent(line) is not None),
+        len(lines),
+    )
+    edits.append((insert, insert, [rendered, ""]))
+
+
+def _drop_removed_scalars(
+    parent: _Block,
+    before_body: Any,
+    after_body: Mapping[str, Any],
+    edits: list[tuple[int, int, list[str]]],
+) -> None:
+    """Remove a scalar key that a schema step dropped from a model or role."""
+    if not isinstance(before_body, dict) or not isinstance(after_body, dict):
+        return
+    for key, value in before_body.items():
+        if key in after_body or isinstance(value, (dict, list)):
+            continue
+        child = _child(parent, str(key))
+        if child is None or not child.value.strip():
+            continue
+        edits.append((child.line, child.line + 1, []))
 
 
 def _sync_scalar(

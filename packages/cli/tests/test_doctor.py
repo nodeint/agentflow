@@ -59,6 +59,22 @@ class DoctorCommandTests(unittest.TestCase):
         self.assertEqual(providers["problems"], ["grok is not on PATH"])
         self.assertIn("codex  /bin/codex", providers["items"])
 
+    def test_doctor_stops_when_the_schema_is_outdated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            _write_project(workspace)
+            config_path = workspace / ".agentflow" / "config.yaml"
+            original = config_path.read_text(encoding="utf-8").replace(
+                "schema_version: 1\n", "", 1
+            )
+            config_path.write_text(original, encoding="utf-8")
+            stderr = io.StringIO()
+            with patch("sys.stderr", stderr):
+                code = main(["doctor"], cwd=workspace)
+            self.assertEqual(code, 2)
+            self.assertIn("Schema is outdated. Run `agentflow migrate` to update.", stderr.getvalue())
+            self.assertEqual(config_path.read_text(encoding="utf-8"), original)
+
     def test_doctor_exits_2_when_the_workspace_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             stderr = io.StringIO()
@@ -72,6 +88,7 @@ def _write_project(workspace: Path) -> None:
     workflows = workspace / ".agentflow" / "workflows"
     workflows.mkdir(parents=True)
     config = (
+        "schema_version: 1\n"
         "models:\n"
         "  planner-model:\n"
         "    provider: codex\n"

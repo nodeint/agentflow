@@ -14,11 +14,13 @@ import unittest
 from unittest.mock import patch
 
 from agentflow_cli.commands.config import run_config_model, run_config_role
+from agentflow_cli.migrate import run_migrate
 from agentflow_cli.run import main
 from agentflow_kernel.config import load_yaml_mapping
 
 
 CONFIG = """\
+schema_version: 1
 models:
   shared:
     provider: grok
@@ -37,6 +39,7 @@ roles:
 """
 
 WORKFLOW = """\
+schema_version: 1
 id: plan
 stages:
   - id: implement
@@ -124,7 +127,7 @@ class ConfigCommandTests(unittest.TestCase):
         self.assertIn("role", text)
         self.assertNotIn("models:", text)
 
-    def test_show_prints_the_config_file(self) -> None:
+    def test_show_prints_the_config_file_without_migrating_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             _project(workspace)
@@ -133,6 +136,83 @@ class ConfigCommandTests(unittest.TestCase):
                 code = main(["config", "show"], cwd=workspace)
         self.assertEqual(code, 0)
         self.assertEqual(stdout.getvalue(), CONFIG)
+
+    def test_outdated_schema_stops_before_a_model_edit(self) -> None:
+        legacy = """\
+models:
+  grok:
+    provider: grok
+    model: grok-4.6
+    options:
+      thinking: medium
+roles:
+  developer:
+    default_model: grok
+    thinking: high
+"""
+        workflow = (
+            "id: plan\n"
+            "stages:\n"
+            "  - id: implement\n"
+            "    role: developer\n"
+            "    depends_on: []\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            _project(workspace)
+            config_path = workspace / ".agentflow" / "config.yaml"
+            workflow_path = workspace / ".agentflow" / "workflows" / "plan.yaml"
+            config_path.write_text(legacy, encoding="utf-8")
+            workflow_path.write_text(workflow, encoding="utf-8")
+            stderr = io.StringIO()
+            with patch("sys.stderr", stderr):
+                code = run_config_model(
+                    workspace,
+                    interactive=True,
+                    prompter=_Answers(["grok"]),
+                    which=_which,
+                    run_command=_run_command,
+                )
+            self.assertEqual(code, 2)
+            self.assertIn("Schema is outdated. Run `agentflow migrate` to update.", stderr.getvalue())
+            self.assertEqual(config_path.read_text(encoding="utf-8"), legacy)
+            stdout = io.StringIO()
+            with patch("sys.stdout", stdout):
+                migrated = run_migrate(workspace, assume_yes=True)
+            config = load_yaml_mapping(config_path)
+        self.assertEqual(migrated, 0)
+        self.assertIn("Upgraded schema to version 1.", stdout.getvalue())
+        self.assertEqual(config["models"]["grok"]["options"]["reasoning-effort"], "medium")
+        self.assertEqual(config["roles"]["developer"]["options"]["reasoning-effort"], "high")
+        self.assertNotIn("thinking", config["roles"]["developer"])
+
+    def test_migrate_asks_before_writing_and_yes_skips_the_question(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            _project(workspace)
+            config_path = workspace / ".agentflow" / "config.yaml"
+            original = config_path.read_text(encoding="utf-8").replace(
+                "schema_version: 1\n", "", 1
+            )
+            config_path.write_text(original, encoding="utf-8")
+            stderr = io.StringIO()
+            stdout = io.StringIO()
+            with patch("sys.stderr", stderr), patch("sys.stdout", stdout), patch(
+                "agentflow_cli.migrate.sys.stdin.isatty", return_value=False
+            ):
+                declined = run_migrate(workspace, confirm=lambda _message: False)
+                refused = main(["migrate"], cwd=workspace)
+            self.assertEqual(declined, 0)
+            self.assertIn("Left unchanged.", stdout.getvalue())
+            self.assertEqual(refused, 2)
+            self.assertIn("--yes", stderr.getvalue())
+            self.assertEqual(config_path.read_text(encoding="utf-8"), original)
+            with patch("sys.stdout", io.StringIO()):
+                upgraded = main(["migrate", "--yes"], cwd=workspace)
+            self.assertEqual(upgraded, 0)
+            self.assertEqual(
+                load_yaml_mapping(config_path)["schema_version"], "1"
+            )
 
     def test_lists_models_as_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -644,6 +644,7 @@ class ExecuteWorkflowTests(unittest.TestCase):
 
     def test_stage_id_resumes_the_declared_source_session(self) -> None:
         workflow = """\
+schema_version: 1
 id: resume-sample
 stages:
   - id: draft
@@ -704,6 +705,7 @@ stages:
 
 
 _REVISION_LOOP = """\
+schema_version: 1
 id: loop
 stages:
   - id: plan
@@ -725,6 +727,7 @@ stages:
 """
 
 _OPEN_LOOP = """\
+schema_version: 1
 id: loop
 stages:
   - id: plan

@@ -4,6 +4,7 @@ Models describe execution. Roles describe intent. Both are declared in
 `.agentflow/config.yaml`:
 
 ```yaml
+schema_version: 1
 models:
   implementation:
     provider: codex
@@ -35,6 +36,21 @@ prompts. Leaving one unset keeps the provider default.
 
 A role or stage `options` map overrides the same keys on the model. Only
 options the adapter marks as overridable are part of the provider session.
+
+## Schema version
+
+`schema_version` on `.agentflow/config.yaml` and on each workflow file is the
+document version. A missing value is version 0. A command that uses those
+files stops while the recorded version is older and tells you to run
+`agentflow migrate`. That command asks before writing. `agentflow migrate --yes`
+writes without asking.
+
+The kernel walks one version at a time. A file at version 1 that is moving to
+version 3 runs the version 1 function, then the version 2 function. Each
+adapter defines those functions itself, separately for a model entry, a role,
+and a workflow stage. Grok version 0 moves `thinking` to `reasoning-effort`.
+Codex version 0 moves `thinking` to `model_reasoning_effort`. A project's own
+`version` field is left as it is.
 
 ## Selection and overrides
 

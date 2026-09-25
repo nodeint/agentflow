@@ -32,6 +32,7 @@ from agentflow_kernel.doctor import diagnose
 from agentflow_kernel.workflow import WorkflowDocument, load_workflow_catalog
 
 from ..display import print_error
+from ..migrate import require_current_schema
 from ..workspace import find_workspace, invocation_cwd
 from .doctor import run_doctor
 from .init import (
@@ -834,6 +835,7 @@ def _select_provider(
 
 
 def _loaded(workspace: Path) -> tuple[dict, tuple[WorkflowDocument, ...], ConfigView]:
+    require_current_schema(workspace)
     config = load_yaml_mapping(workspace / ".agentflow" / "config.yaml")
     workflows = _documents(workspace)
     return config, workflows, inspect_config(config, workflows)

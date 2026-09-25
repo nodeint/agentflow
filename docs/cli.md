@@ -67,6 +67,23 @@ agentflow config role reviewer --provider grok --model grok-4.7 --option reasoni
 `config` with no command prints help. `config show` prints
 `.agentflow/config.yaml` as stored.
 
+## Migrate
+
+```bash
+agentflow migrate
+agentflow migrate --yes
+```
+
+`doctor`, `config model`, `config role`, `agent`, `start`, `continue`, and
+`stage` stop when `schema_version` is older than this Agentflow and print
+`Schema is outdated. Run agentflow migrate.` A missing `schema_version` is
+version 0.
+
+`migrate` prints the pending changes and asks before it writes. `--yes` writes
+without asking, for a caller that has no terminal. Declining leaves the files
+unchanged. The upgrade still runs one version at a time. Each adapter defines
+its own function for a model, a role, and a stage at that version.
+
 In a terminal, `config model` or `config role` with no arguments opens a list.
 The last choice adds a model or a role. Choosing a model edits that entry.
 Choosing a role points that role at a model, or adds a model for it.

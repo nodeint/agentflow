@@ -15,6 +15,7 @@ from agentflow_kernel.runtime import log
 from agentflow_kernel.session_store import SessionStore
 
 from ..display import print_agent, print_error, print_notice
+from ..migrate import require_current_schema
 from .init import _parse_options
 from ..workspace import find_workspace, invocation_cwd, resolve_prompt
 
@@ -208,6 +209,7 @@ def dispatch_agent(
     as_json: bool,
     runner: Optional[AgentToolRunner] = None,
 ) -> int:
+    require_current_schema(workspace)
     target = resolve_role_target(
         workspace,
         role,

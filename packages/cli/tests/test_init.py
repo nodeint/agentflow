@@ -108,6 +108,8 @@ class InitCommandTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
             gitignore = (workspace / ".agentflow" / ".gitignore").read_text(encoding="utf-8")
             self.assertEqual(code, 0)
+            self.assertIn("schema_version: 1", config)
+            self.assertIn("schema_version: 1", workflow)
             self.assertIn("provider: codex", config)
             self.assertIn("model: gpt-5", config)
             self.assertNotIn("options", config)

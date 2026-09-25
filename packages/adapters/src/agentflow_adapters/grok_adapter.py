@@ -3,9 +3,14 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
-from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec, ModelCatalog, ProviderOption
+from agentflow_kernel.base_adapter import (
+    BaseCLIAdapter,
+    CommandSpec,
+    ModelCatalog,
+    ProviderOption,
+)
 from agentflow_kernel.provider_events import classify_provider_error, provider_error_message
 
 
@@ -80,6 +85,24 @@ class GrokAdapter(BaseCLIAdapter):
 
     def provider_options(self) -> tuple[ProviderOption, ...]:
         return _GROK_OPTIONS
+
+    def model_migrations(self) -> Mapping[int, Callable[[dict[str, Any]], None]]:
+        return {0: self._migrate_model_0}
+
+    def role_migrations(self) -> Mapping[int, Callable[[dict[str, Any]], None]]:
+        return {0: self._migrate_role_0}
+
+    def stage_migrations(self) -> Mapping[int, Callable[[dict[str, Any]], None]]:
+        return {0: self._migrate_stage_0}
+
+    def _migrate_model_0(self, model: dict[str, Any]) -> None:
+        _move_grok_thinking(model)
+
+    def _migrate_role_0(self, role: dict[str, Any]) -> None:
+        _move_grok_thinking(role)
+
+    def _migrate_stage_0(self, stage: dict[str, Any]) -> None:
+        _move_grok_thinking(stage)
 
     def option_values_command(self, name: str, model: str) -> list[str] | None:
         if name != "reasoning-effort":
@@ -200,6 +223,29 @@ class GrokAdapter(BaseCLIAdapter):
         if isinstance(tool_call_id, str):
             return self._tool_calls.get(tool_call_id, {})
         return {}
+
+
+def _move_grok_thinking(body: dict[str, Any]) -> None:
+    options = body.get("options")
+    if "options" in body and not isinstance(options, dict):
+        return
+    if isinstance(options, dict) and "thinking" in options:
+        value = options["thinking"]
+        if isinstance(value, str) and value.strip():
+            current = options.get("reasoning-effort")
+            if not (isinstance(current, str) and current.strip()):
+                options["reasoning-effort"] = value.strip()
+            del options["thinking"]
+    value = body.get("thinking")
+    if not isinstance(value, str) or not value.strip():
+        return
+    if not isinstance(options, dict):
+        options = {}
+        body["options"] = options
+    current = options.get("reasoning-effort")
+    if not (isinstance(current, str) and current.strip()):
+        options["reasoning-effort"] = value.strip()
+    del body["thinking"]
 
 
 _GROK_EFFORT_PROBE = "agentflow-probe"

@@ -12,6 +12,7 @@ from agentflow_kernel.execute import (
     execute_named_workflow,
 )
 
+from ..migrate import require_current_schema
 from ..workspace import find_workspace, invocation_cwd
 
 workflow_commands = typer.Typer(
@@ -250,6 +251,7 @@ def execute_workflow(
     max_dispatches: Optional[int] = DEFAULT_MAX_DISPATCHES,
     runner: Optional[AgentToolRunner] = None,
 ) -> int:
+    require_current_schema(workspace)
     once = action == "stage"
     creating = action == "start" or (once and not _text(session_id))
     return execute_named_workflow(

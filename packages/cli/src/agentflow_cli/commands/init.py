@@ -339,7 +339,7 @@ def _render_config(
     else:
         models.append(("review", reviewer))
         roles = (("planner", "default"), ("reviewer", "review"))
-    lines = ["models:"]
+    lines = ["schema_version: 1", "models:"]
     for name, choice in models:
         lines.extend(
             [
@@ -361,6 +361,7 @@ def _render_config(
 def _render_workflow(preset: str) -> str:
     if preset == "implement":
         return (
+            "schema_version: 1\n"
             "id: implement\n"
             "stages:\n"
             "  - id: implement\n"
@@ -373,6 +374,7 @@ def _render_workflow(preset: str) -> str:
             "  stage: implement\n"
         )
     return (
+        "schema_version: 1\n"
         "id: plan\n"
         "stages:\n"
         "  - id: plan\n"

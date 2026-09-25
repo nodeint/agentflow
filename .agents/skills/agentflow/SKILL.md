@@ -16,6 +16,7 @@ Use Agentflow as the control plane for the project's multi-stage agent workflows
   `.agentflow/workflows/` before changing or running a workflow.
 - Run `agentflow doctor` after editing configuration or workflows.
   `agentflow config model` and `agentflow config role` run it after a write.
+- If a command says `schema_version` is outdated, run `agentflow migrate --yes` to update.
 - Treat `.agentflow/sessions/` as generated, resumable state. Do not edit its
   files directly.
 - Preserve the user's task wording when passing `--task`.

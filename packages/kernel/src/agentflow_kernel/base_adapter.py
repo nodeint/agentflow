@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 
 @dataclass
@@ -71,6 +71,18 @@ class BaseCLIAdapter(ABC):
     def provider_options(self) -> tuple[ProviderOption, ...]:
         """Options this provider accepts. Prompted options are asked after a model is chosen."""
         return ()
+
+    def model_migrations(self) -> Mapping[int, Callable[[dict[str, Any]], None]]:
+        """Rewrite one `models:` entry from the keyed version to the next version."""
+        return {}
+
+    def role_migrations(self) -> Mapping[int, Callable[[dict[str, Any]], None]]:
+        """Rewrite one `roles:` entry from the keyed version to the next version."""
+        return {}
+
+    def stage_migrations(self) -> Mapping[int, Callable[[dict[str, Any]], None]]:
+        """Rewrite one workflow stage from the keyed version to the next version."""
+        return {}
 
     def profile_options(self, options: Mapping[str, str]) -> Dict[str, str]:
         """Overridable options that identify a provider session."""

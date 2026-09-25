@@ -109,6 +109,7 @@ def _write_prompt_artifact(prompt: str, body: str) -> None:
 
 
 FAKE_FLOW_CONFIG = """\
+schema_version: 1
 models:
   fake-model:
     provider: fake

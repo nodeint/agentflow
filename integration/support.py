@@ -15,6 +15,7 @@ GROK_SESSION = "fake-grok-session"
 CODEX_THREAD = "fake-codex-thread"
 
 GROK_CONFIG = """\
+schema_version: 1
 models:
   grok-model:
     provider: grok
@@ -29,6 +30,7 @@ roles:
 """
 
 CODEX_CONFIG = """\
+schema_version: 1
 models:
   codex-model:
     provider: codex
@@ -41,6 +43,7 @@ roles:
 """
 
 PLAN_REVIEW = """\
+schema_version: 1
 id: plan
 description: Write and approve a plan before implementation.
 stages:
@@ -71,6 +74,7 @@ completion:
 """
 
 DRAFT_NOTE = """\
+schema_version: 1
 id: draft-note
 stages:
   - id: draft
@@ -81,6 +85,7 @@ stages:
 """
 
 SOLO = """\
+schema_version: 1
 id: solo
 stages:
   - id: write
@@ -105,6 +110,7 @@ BLOCKED = "status: blocked\nblocker: missing schema\n\nnope"
 
 def resumed_notes(role: str) -> str:
     return f"""\
+schema_version: 1
 id: notes
 stages:
   - id: draft

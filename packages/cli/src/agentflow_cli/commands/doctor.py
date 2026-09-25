@@ -11,6 +11,7 @@ from agentflow_adapters import default_adapters
 from agentflow_kernel.doctor import Check, diagnose
 
 from ..display import print_doctor
+from ..migrate import require_current_schema
 from ..workspace import find_workspace, invocation_cwd
 
 doctor_app = typer.Typer(
@@ -44,6 +45,7 @@ def run_doctor(
     as_json: bool = False,
     which: Optional[Callable[[str], Optional[str]]] = None,
 ) -> int:
+    require_current_schema(workspace)
     checks = diagnose(
         workspace,
         adapters=default_adapters(),

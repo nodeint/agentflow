@@ -13,6 +13,7 @@ from .commands.config import config_app
 from .commands.doctor import doctor_app, run_doctor
 from .commands.init import init_app, run_init
 from .commands.execute import execute_workflow, workflow_commands
+from .commands.migrate import migrate_command
 from .commands.sessions import list_sessions, sessions_app
 from .commands.skill import install_skill, skill_app, update_skill
 from .commands.watch import watch_app, watch_session
@@ -46,6 +47,7 @@ app.add_typer(doctor_app, name="doctor")
 app.add_typer(init_app, name="init")
 app.add_typer(config_app, name="config")
 app.add_typer(skill_app, name="skill")
+app.command("migrate")(migrate_command)
 
 __all__ = [
     "app",

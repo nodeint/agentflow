@@ -66,6 +66,7 @@ In the project where agents will work, create two files:
 `.agentflow/config.yaml` assigns provider models to roles:
 
 ```yaml
+schema_version: 1
 models:
   planner-model:
     provider: codex
@@ -92,6 +93,7 @@ option values are the ones that CLI lists for the model you picked.
 `.agentflow/workflows/plan.yaml` defines the process:
 
 ```yaml
+schema_version: 1
 id: plan
 constraints:
   - Do not write implementation code.
