@@ -60,15 +60,27 @@ class CodexAdapter(BaseCLIAdapter):
         if not isinstance(models, list):
             raise ValueError("codex model catalog has no models.")
         ids: list[str] = []
+        thinking: list[tuple[str, tuple[str, ...]]] = []
         for item in models:
             if not isinstance(item, dict) or item.get("visibility") not in {None, "list"}:
                 continue
             slug = item.get("slug")
             if isinstance(slug, str) and slug and slug not in ids:
                 ids.append(slug)
+                thinking.append((slug, _reasoning_levels(item.get("supported_reasoning_levels"))))
         if not ids:
             raise ValueError("codex model catalog is empty.")
-        return ModelCatalog(tuple(ids))
+        return ModelCatalog(tuple(ids), thinking=tuple(thinking))
+
+    def thinking_command(self, model: str) -> list[str]:
+        del model
+        return self.model_catalog_command()
+
+    def parse_thinking_values(self, text: str, *, model: str) -> tuple[str, ...]:
+        values = self.parse_model_catalog(text).thinking_for(model)
+        if values is None:
+            raise ValueError(f"codex did not list thinking values for {model}.")
+        return values
 
     def validate_options(self, options: Mapping[str, str]) -> None:
         for key, value in options.items():
@@ -76,8 +88,6 @@ class CodexAdapter(BaseCLIAdapter):
                 raise ValueError(f"{key} is not a codex option.")
             if not value.strip():
                 raise ValueError(f"{key} is empty.")
-            if key == "thinking":
-                _one_of(value, _CODEX_THINKING, "thinking")
 
     def parse_response(
         self, stdout: str, last_message_file: Path
@@ -150,14 +160,23 @@ class CodexAdapter(BaseCLIAdapter):
         return None
 
 
-_CODEX_THINKING = ("minimal", "low", "medium", "high", "xhigh")
-CodexAdapter.thinking_values = _CODEX_THINKING
 _OPTION_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_.-]*")
 
 
-def _one_of(value: str, allowed: tuple[str, ...], field: str) -> None:
-    if value not in allowed:
-        raise ValueError(f"{field} must be one of: {', '.join(allowed)}.")
+def _reasoning_levels(raw: Any) -> tuple[str, ...]:
+    if not isinstance(raw, list):
+        return ()
+    values: list[str] = []
+    for level in raw:
+        if isinstance(level, dict):
+            effort = level.get("effort")
+        elif isinstance(level, str):
+            effort = level
+        else:
+            continue
+        if isinstance(effort, str) and effort and effort not in values:
+            values.append(effort)
+    return tuple(values)
 
 
 def _append_options(cmd: list[str], options: Optional[Mapping[str, str]]) -> None:

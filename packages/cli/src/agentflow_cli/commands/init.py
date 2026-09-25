@@ -62,7 +62,8 @@ def init_command(
     """Create a minimal config, one workflow, and a sessions gitignore.
 
     In a terminal, choose the provider and model from the lists reported by
-    the provider CLIs. Pass --provider and --model together when input is
+    the provider CLIs. Thinking values are the ones that provider lists for
+    the model you picked. Pass --provider and --model together when input is
     not a terminal.
     --preset implement writes one developer stage. plan writes a
     planner and a reviewer. A separate reviewer model is asked only in the
@@ -242,19 +243,28 @@ def _choices(
         adapter = adapters[provider]
         catalog = _load_catalog(adapter, which, run_command)
         model = prompt.select_model(provider, catalog, "Model")
-        thinking_value = prompt.select_thinking(adapter.thinking_values, "Thinking")
+        thinking_values = _load_thinking(adapter, model, catalog, which, run_command)
+        thinking_value = prompt.select_thinking(thinking_values, "Thinking")
     else:
         adapter = _require_adapter(adapters, provider)
         assert model is not None
         catalog = _load_catalog(adapter, which, run_command)
         model = _known_model(model, catalog)
-        thinking_value = thinking
+        if thinking is not None and thinking.strip():
+            thinking_values = _load_thinking(adapter, model, catalog, which, run_command)
+            thinking_value = _accepted_thinking(thinking, thinking_values, model)
+        else:
+            thinking_value = None
     if not model or not model.strip():
         raise ValueError("Model is required.")
     primary = ModelChoice(
         provider=provider,
         model=model.strip(),
-        thinking=_accepted_thinking(adapter, thinking_value),
+        thinking=_accepted_thinking(
+            thinking_value,
+            thinking_values if thinking_value else (),
+            model,
+        ),
     )
     if preset != "plan" or not interactive:
         return primary, None
@@ -267,13 +277,14 @@ def _choices(
     reviewer_model = prompt.select_model(
         reviewer_provider, reviewer_catalog, "Reviewer model"
     )
-    reviewer_thinking = prompt.select_thinking(
-        reviewer_adapter.thinking_values, "Reviewer thinking"
+    reviewer_values = _load_thinking(
+        reviewer_adapter, reviewer_model, reviewer_catalog, which, run_command
     )
+    reviewer_thinking = prompt.select_thinking(reviewer_values, "Reviewer thinking")
     return primary, ModelChoice(
         provider=reviewer_provider,
         model=reviewer_model.strip(),
-        thinking=_accepted_thinking(reviewer_adapter, reviewer_thinking),
+        thinking=_accepted_thinking(reviewer_thinking, reviewer_values, reviewer_model),
     )
 
 
@@ -443,6 +454,31 @@ def _known_model(model: str, catalog: ModelCatalog) -> str:
     return value
 
 
+def _load_thinking(
+    adapter: BaseCLIAdapter,
+    model: str,
+    catalog: ModelCatalog,
+    which: Callable[[str], Optional[str]],
+    run_command: Callable[[list[str]], str],
+) -> tuple[str, ...]:
+    found = catalog.thinking_for(model)
+    if found is not None:
+        return found
+    if which(adapter.command) is None:
+        raise ValueError(
+            f"{adapter.command} is not on PATH, so its thinking values could not be listed."
+        )
+    try:
+        text = run_command(adapter.thinking_command(model))
+    except ValueError as exc:
+        text = str(exc)
+    except OSError as exc:
+        raise ValueError(
+            f"Could not list {adapter.command} thinking values for {model}: {exc}"
+        ) from exc
+    return adapter.parse_thinking_values(text, model=model)
+
+
 def _run_command(argv: list[str]) -> str:
     completed = subprocess.run(
         argv,
@@ -477,14 +513,16 @@ def _require_adapter(
     return adapter
 
 
-def _accepted_thinking(adapter: BaseCLIAdapter, thinking: Optional[str]) -> Optional[str]:
+def _accepted_thinking(
+    thinking: Optional[str], values: tuple[str, ...], model: str
+) -> Optional[str]:
     if thinking is None or not thinking.strip():
         return None
     value = thinking.strip()
-    try:
-        adapter.validate_options({"thinking": value})
-    except ValueError as exc:
-        raise ValueError(str(exc)) from exc
+    if value not in values:
+        if not values:
+            raise ValueError(f"{model} does not accept thinking.")
+        raise ValueError(f"thinking must be one of: {', '.join(values)}.")
     return value
 
 

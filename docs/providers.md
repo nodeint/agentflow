@@ -21,14 +21,15 @@ CLI.
 
 ## Options
 
-`thinking` is normalized across the supported providers. Each adapter checks
-the value before a turn starts:
+`thinking` is normalized across the supported providers. The allowed values
+are the ones that provider lists for the selected model. `agentflow init` and
+`agentflow config` read that list after the model is chosen.
 
-- Codex accepts `minimal`, `low`, `medium`, `high`, and `xhigh`, and sends it
-  as `model_reasoning_effort`. Any other option is a Codex config override
-  passed as `codex exec -c key=value`.
-- Grok accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`,
-  and sends it as `--reasoning-effort`. Grok also accepts `max_turns`, `tools`,
+- Codex reads `supported_reasoning_levels` from `codex debug models` and sends
+  the choice as `model_reasoning_effort`. Any other option is a Codex config
+  override passed as `codex exec -c key=value`.
+- Grok asks the `grok` CLI which efforts that model accepts and sends the
+  choice as `--reasoning-effort`. Grok also accepts `max_turns`, `tools`,
   `disallowed_tools`, `permission_mode`, `rules`, `allow`, `deny`, and
   `sandbox`. Other keys are rejected.
 

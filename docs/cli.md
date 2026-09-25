@@ -42,7 +42,8 @@ agentflow init --preset plan --provider codex --model gpt-5
 
 `init` writes `.agentflow/config.yaml`, one workflow, and `.agentflow/.gitignore`.
 The config contains the provider and model you choose. Model ids come from
-that provider's CLI, not from a built-in list. Thinking is omitted, so
+that provider's CLI, not from a built-in list. Thinking values come from
+that provider for the model you picked. Thinking is omitted, so
 the provider CLI keeps its own default. Pass `--thinking` only to set
 `options.thinking`. The default workflow is `implement`, a single developer
 stage. `--preset plan` writes a planner and a reviewer. In a terminal,
@@ -74,7 +75,7 @@ Choosing a role points that role at a model, or adds a model for it.
 Pass the flags to write without prompts. `--model` is the provider model id.
 `--model-name` is the name under `models:` in `.agentflow/config.yaml`.
 `--provider` and `--model` are passed together. Model ids come from that
-provider's CLI.
+provider's CLI. Thinking values come from that provider for the chosen model.
 
 `config model <name>` creates a missing name and updates an existing one. An
 update changes every role and stage that uses the name. `--thinking` sets

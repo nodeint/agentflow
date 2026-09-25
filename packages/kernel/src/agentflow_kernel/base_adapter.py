@@ -22,11 +22,17 @@ class NewSession:
 class ModelCatalog:
     ids: tuple[str, ...]
     default_id: Optional[str] = None
+    thinking: tuple[tuple[str, tuple[str, ...]], ...] = ()
+
+    def thinking_for(self, model_id: str) -> Optional[tuple[str, ...]]:
+        for model, values in self.thinking:
+            if model == model_id:
+                return values
+        return None
 
 
 class BaseCLIAdapter(ABC):
     display_name = ""
-    thinking_values: tuple[str, ...] = ()
 
     @property
     @abstractmethod
@@ -45,6 +51,16 @@ class BaseCLIAdapter(ABC):
         """Read model ids from the catalog command's stdout."""
         del stdout
         raise ValueError(f"{self.command} does not list models.")
+
+    def thinking_command(self, model: str) -> List[str]:
+        """Argv that prints thinking values for one model."""
+        del model
+        raise ValueError(f"{self.command} does not list thinking values.")
+
+    def parse_thinking_values(self, text: str, *, model: str) -> tuple[str, ...]:
+        """Read thinking values for `model` from the thinking command's output."""
+        del text, model
+        raise ValueError(f"{self.command} does not list thinking values.")
 
     def create_new_session(self) -> NewSession:
         return NewSession()

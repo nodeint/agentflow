@@ -173,7 +173,9 @@ class DoctorTests(unittest.TestCase):
             config_path = workspace / ".agentflow" / "config.yaml"
             config_path.write_text(
                 config_path.read_text(encoding="utf-8").replace(
-                    "thinking: high", "thinking: banana", 1
+                    "      thinking: high\n",
+                    '      thinking: high\n      nope: "1"\n',
+                    1,
                 ),
                 encoding="utf-8",
             )
@@ -184,18 +186,16 @@ class DoctorTests(unittest.TestCase):
             )
         self.assertFalse(config.ok)
         self.assertIn(
-            "models.grok.options: thinking must be one of: "
-            "none, minimal, low, medium, high, xhigh, max.",
+            "models.grok.options: nope is not a grok option.",
             config.problems,
         )
         self.assertIn(
-            "roles.developer: thinking must be one of: "
-            "none, minimal, low, medium, high, xhigh, max.",
+            "roles.developer: nope is not a grok option.",
             config.problems,
         )
         self.assertTrue(workflows.ok)
 
-    def test_reports_a_stage_option_the_adapter_rejects(self) -> None:
+    def test_does_not_reject_thinking_against_a_builtin_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             _write_stage_project(workspace)
@@ -212,12 +212,7 @@ class DoctorTests(unittest.TestCase):
                 which=_which({"codex", "grok"}),
             )
         self.assertTrue(config.ok)
-        self.assertFalse(workflows.ok)
-        self.assertIn(
-            "plan-implement.review-work: thinking must be one of: "
-            "minimal, low, medium, high, xhigh.",
-            workflows.problems,
-        )
+        self.assertTrue(workflows.ok)
 
     def test_reports_a_missing_workflows_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

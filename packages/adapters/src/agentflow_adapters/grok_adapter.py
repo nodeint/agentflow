@@ -78,6 +78,34 @@ class GrokAdapter(BaseCLIAdapter):
             default_id = None
         return ModelCatalog(tuple(ids), default_id)
 
+    def thinking_command(self, model: str) -> list[str]:
+        return [
+            self.command,
+            "-m",
+            model,
+            "--reasoning-effort",
+            _GROK_THINKING_PROBE,
+            "-p",
+            "x",
+            "--output-format",
+            "plain",
+        ]
+
+    def parse_thinking_values(self, text: str, *, model: str) -> tuple[str, ...]:
+        del model
+        match = _GROK_EFFORTS.search(text)
+        if match is None:
+            detail = " ".join(text.split())
+            raise ValueError(detail or "grok did not list thinking values.")
+        values: list[str] = []
+        for part in match.group(1).split(","):
+            value = part.strip().strip(".")
+            if value and value not in values:
+                values.append(value)
+        if not values:
+            raise ValueError("grok did not list thinking values.")
+        return tuple(values)
+
     def validate_options(self, options: Mapping[str, str]) -> None:
         for key, value in options.items():
             check = _GROK_OPTION_CHECKS.get(key)
@@ -167,8 +195,8 @@ class GrokAdapter(BaseCLIAdapter):
         return {}
 
 
-_GROK_THINKING = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
-GrokAdapter.thinking_values = _GROK_THINKING
+_GROK_THINKING_PROBE = "agentflow-probe"
+_GROK_EFFORTS = re.compile(r"use one of: ([^\n]+)")
 _GROK_PERMISSION_MODES = (
     "default",
     "acceptEdits",
@@ -182,10 +210,6 @@ _GROK_PERMISSION_MODES = (
 def _one_of(value: str, allowed: tuple[str, ...], field: str) -> None:
     if value not in allowed:
         raise ValueError(f"{field} must be one of: {', '.join(allowed)}.")
-
-
-def _grok_thinking(value: str) -> None:
-    _one_of(value, _GROK_THINKING, "thinking")
 
 
 def _grok_max_turns(value: str) -> None:
@@ -202,7 +226,7 @@ def _grok_text(value: str) -> None:
 
 
 _GROK_OPTION_CHECKS = {
-    "thinking": _grok_thinking,
+    "thinking": _grok_text,
     "max_turns": _grok_max_turns,
     "tools": _grok_text,
     "disallowed_tools": _grok_text,

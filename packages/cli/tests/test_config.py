@@ -62,7 +62,19 @@ def _run_command(argv: list[str]) -> str:
             "  - grok-4.6\n"
         )
     if argv[:2] == ["codex", "debug"]:
-        return json.dumps({"models": [{"slug": "gpt-5", "visibility": "list"}]})
+        return json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "gpt-5",
+                        "visibility": "list",
+                        "supported_reasoning_levels": [{"effort": "high"}],
+                    }
+                ]
+            }
+        )
+    if argv[:1] == ["grok"] and "--reasoning-effort" in argv:
+        return "use one of: xhigh, high, medium, low"
     raise AssertionError(argv)
 
 

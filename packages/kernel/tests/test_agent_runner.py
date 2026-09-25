@@ -248,13 +248,13 @@ class RunnerTests(unittest.TestCase):
 
         runner = AgentToolRunner(adapters={"grok": GrokAdapter()}, timeout_sec=10)
         with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaisesRegex(ValueError, "thinking must be one of"):
+            with self.assertRaisesRegex(ValueError, "temperature is not a grok option"):
                 runner.run(
                     "grok",
                     "grok-4",
                     "prompt",
                     tmp,
-                    options={"thinking": "banana"},
+                    options={"temperature": "0.2"},
                 )
             self.assertFalse((Path(tmp) / ".agentflow").exists())
 

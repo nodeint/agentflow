@@ -86,7 +86,8 @@ roles:
     default_model: reviewer-model
 ```
 
-Use model identifiers supported by your installed provider CLIs.
+Use model identifiers supported by your installed provider CLIs. Thinking
+values are the ones that CLI lists for the model you picked.
 
 `.agentflow/workflows/plan.yaml` defines the process:
 

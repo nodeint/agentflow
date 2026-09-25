@@ -14,27 +14,41 @@ from agentflow_adapters.codex_adapter import CodexAdapter
 
 
 class CodexAdapterTests(unittest.TestCase):
-    def test_reads_listed_models_from_the_codex_catalog(self) -> None:
+    def test_reads_listed_models_and_their_thinking_from_the_codex_catalog(self) -> None:
         catalog = CodexAdapter().parse_model_catalog(
             '{"models":['
-            '{"slug":"gpt-5","visibility":"list"},'
-            '{"slug":"internal","visibility":"hide"}'
+            '{"slug":"gpt-5","visibility":"list","supported_reasoning_levels":'
+            '[{"effort":"low"},{"effort":"high"}]},'
+            '{"slug":"gpt-5-pro","visibility":"list","supported_reasoning_levels":'
+            '[{"effort":"max"}]},'
+            '{"slug":"internal","visibility":"hide","supported_reasoning_levels":'
+            '[{"effort":"low"}]}'
             "]}"
         )
-        self.assertEqual(catalog.ids, ("gpt-5",))
+        self.assertEqual(catalog.ids, ("gpt-5", "gpt-5-pro"))
+        self.assertEqual(catalog.thinking_for("gpt-5"), ("low", "high"))
+        self.assertEqual(catalog.thinking_for("gpt-5-pro"), ("max",))
+        self.assertIsNone(catalog.thinking_for("internal"))
         self.assertIsNone(catalog.default_id)
         self.assertEqual(
             CodexAdapter().model_catalog_command(),
             ["codex", "debug", "models"],
         )
+        self.assertEqual(
+            CodexAdapter().parse_thinking_values(
+                '{"models":[{"slug":"gpt-5","visibility":"list",'
+                '"supported_reasoning_levels":[{"effort":"low"},{"effort":"high"}]}]}',
+                model="gpt-5",
+            ),
+            ("low", "high"),
+        )
 
-    def test_rejects_a_thinking_value_codex_does_not_accept(self) -> None:
-        with self.assertRaisesRegex(
-            ValueError,
-            "thinking must be one of: minimal, low, medium, high, xhigh",
-        ):
-            CodexAdapter().validate_options({"thinking": "max"})
-        CodexAdapter().validate_options({"thinking": "medium", "temperature": "0.2"})
+    def test_accepts_any_non_empty_thinking_value(self) -> None:
+        with self.assertRaisesRegex(ValueError, "1bad is not a codex option"):
+            CodexAdapter().validate_options({"1bad": "x"})
+        with self.assertRaisesRegex(ValueError, "thinking is empty"):
+            CodexAdapter().validate_options({"thinking": " "})
+        CodexAdapter().validate_options({"thinking": "max", "temperature": "0.2"})
 
     def test_maps_options_onto_codex_config_overrides(self) -> None:
         spec = CodexAdapter().build_command(

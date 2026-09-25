@@ -10,7 +10,7 @@ import typer
 from InquirerPy import inquirer
 
 from agentflow_adapters import default_adapters
-from agentflow_kernel.base_adapter import BaseCLIAdapter
+from agentflow_kernel.base_adapter import BaseCLIAdapter, ModelCatalog
 from agentflow_kernel.config import ConfigurationError, load_model_target, load_yaml_mapping, resolve_stage_spec
 from agentflow_kernel.config_edit import (
     UNSET,
@@ -39,6 +39,7 @@ from .init import (
     _detected,
     _known_model,
     _load_catalog,
+    _load_thinking,
     _require_adapter,
     _run_command,
 )
@@ -347,12 +348,20 @@ def _run_model(
             )
         _emit_models(_selected_models(view, (key,)), as_json=as_json)
         return 0
+    catalog = None
     if provider is not None and model is not None:
-        provider, model = _catalog_model(adapters, which, run_command, provider, model)
+        provider, model, catalog = _catalog_model(adapters, which, run_command, provider, model)
     if thinking_value not in (UNSET, None):
         current_provider = provider or _model_provider(config, key)
-        thinking_value = _accepted_thinking(
-            _require_adapter(adapters, current_provider), str(thinking_value)
+        current_model = model or load_model_target(config, key).model
+        thinking_value = _provider_thinking(
+            adapters,
+            which,
+            run_command,
+            current_provider,
+            current_model,
+            str(thinking_value),
+            catalog if provider is not None else None,
         )
     change = upsert_model(
         config,
@@ -418,10 +427,16 @@ def _run_role(
         _emit_roles(_selected_roles(view, roles), as_json=as_json)
         return 0
     if provider is not None and model is not None:
-        provider, model = _catalog_model(adapters, which, run_command, provider, model)
+        provider, model, catalog = _catalog_model(adapters, which, run_command, provider, model)
         if thinking_value not in (UNSET, None):
-            thinking_value = _accepted_thinking(
-                _require_adapter(adapters, provider), str(thinking_value)
+            thinking_value = _provider_thinking(
+                adapters,
+                which,
+                run_command,
+                provider,
+                model,
+                str(thinking_value),
+                catalog,
             )
         change = place_role_model(
             config,
@@ -434,14 +449,29 @@ def _run_role(
     elif model_name is not None:
         change = assign_roles(config, roles, model_name, workflows=workflows)
         if thinking_value is not UNSET:
+            if thinking_value is not None:
+                target = load_model_target(change.config, model_name)
+                thinking_value = _provider_thinking(
+                    adapters,
+                    which,
+                    run_command,
+                    target.provider,
+                    target.model,
+                    str(thinking_value),
+                )
             follow = set_role_thinking(
                 change.config, roles[0], thinking_value, workflows=workflows
             )
             change = describe_change(config, follow.config, workflows)
     else:
         if thinking_value not in (UNSET, None):
-            _accepted_thinking(
-                _require_adapter(adapters, _role_provider(config, roles[0])),
+            target = _role_model(config, roles[0])
+            thinking_value = _provider_thinking(
+                adapters,
+                which,
+                run_command,
+                target.provider,
+                target.model,
                 str(thinking_value),
             )
         change = set_role_thinking(config, roles[0], thinking_value, workflows=workflows)
@@ -494,12 +524,13 @@ def _edit_model(
         current.model if current.model in catalog.ids else catalog.default_id,
     )
     model_id = _known_model(model_id, catalog)
+    thinking_values = _load_thinking(adapter, model_id, catalog, which, run_command)
     thinking = prompter.select(
         "Thinking",
-        [("provider default", ""), *((value, value) for value in adapter.thinking_values)],
-        current.thinking if current.thinking in adapter.thinking_values else "",
+        [("provider default", ""), *((value, value) for value in thinking_values)],
+        current.thinking if current.thinking in thinking_values else "",
     )
-    stored = _accepted_thinking(adapter, thinking or None)
+    stored = _accepted_thinking(thinking or None, thinking_values, model_id)
     change = upsert_model(
         config,
         key,
@@ -534,12 +565,13 @@ def _add_model(
         catalog.default_id,
     )
     model_id = _known_model(model_id, catalog)
+    thinking_values = _load_thinking(adapter, model_id, catalog, which, run_command)
     thinking = prompter.select(
         "Thinking",
-        [("provider default", ""), *((value, value) for value in adapter.thinking_values)],
+        [("provider default", ""), *((value, value) for value in thinking_values)],
         "",
     )
-    stored = _accepted_thinking(adapter, thinking or None)
+    stored = _accepted_thinking(thinking or None, thinking_values, model_id)
     options = {} if stored is None else {"thinking": stored}
     existing = matching_model_name(config, provider=provider, model=model_id, options=options)
     if existing is not None:
@@ -727,10 +759,29 @@ def _catalog_model(
     run_command: Callable[[list[str]], str],
     provider: str,
     model: str,
-) -> tuple[str, str]:
+) -> tuple[str, str, ModelCatalog]:
     adapter = _require_adapter(adapters, provider)
     catalog = _load_catalog(adapter, which, run_command)
-    return provider, _known_model(model, catalog)
+    return provider, _known_model(model, catalog), catalog
+
+
+def _provider_thinking(
+    adapters: Mapping[str, BaseCLIAdapter],
+    which: Callable[[str], Optional[str]],
+    run_command: Callable[[list[str]], str],
+    provider: str,
+    model: str,
+    thinking: str,
+    catalog: Optional[ModelCatalog] = None,
+) -> str:
+    adapter = _require_adapter(adapters, provider)
+    if catalog is None:
+        catalog = _load_catalog(adapter, which, run_command)
+    values = _load_thinking(adapter, model, catalog, which, run_command)
+    accepted = _accepted_thinking(thinking, values, model)
+    if accepted is None:
+        raise ValueError("Thinking is required.")
+    return accepted
 
 
 def _select_provider(
@@ -777,14 +828,14 @@ def _model_provider(config: Mapping[str, Any], key: str) -> str:
     return load_model_target(config, key).provider
 
 
-def _role_provider(config: Mapping[str, Any], role: str) -> str:
+def _role_model(config: Mapping[str, Any], role: str):
     roles = config.get("roles")
     if not isinstance(roles, dict) or not isinstance(roles.get(role), dict):
         raise ConfigEditError(f"Unknown role: {role}.")
     model_name = roles[role].get("default_model")
     if not isinstance(model_name, str):
         raise ConfigurationError(f"Missing or invalid roles.{role}.default_model.")
-    return load_model_target(config, model_name).provider
+    return load_model_target(config, model_name)
 
 
 def _selected_models(view: ConfigView, keys: Sequence[str]) -> tuple[ModelView, ...]:

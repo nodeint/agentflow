@@ -105,18 +105,42 @@ class GrokAdapterTests(unittest.TestCase):
             "  - grok-4.6\n"
         )
         self.assertEqual(catalog.ids, ("grok-4.7", "grok-4.6"))
+        self.assertIsNone(catalog.thinking_for("grok-4.7"))
         self.assertEqual(catalog.default_id, "grok-4.7")
         self.assertEqual(GrokAdapter().model_catalog_command(), ["grok", "models"])
 
-    def test_rejects_an_unknown_option_and_a_bad_thinking_value(self) -> None:
+    def test_reads_thinking_values_for_the_selected_model(self) -> None:
+        adapter = GrokAdapter()
+        text = (
+            "--effort/--reasoning-effort: unknown effort level 'agentflow-probe'; "
+            "use one of: high, medium, low\n"
+        )
+        self.assertEqual(
+            adapter.parse_thinking_values(text, model="grok-4.5"),
+            ("high", "medium", "low"),
+        )
+        self.assertEqual(
+            adapter.thinking_command("grok-4.5"),
+            [
+                "grok",
+                "-m",
+                "grok-4.5",
+                "--reasoning-effort",
+                "agentflow-probe",
+                "-p",
+                "x",
+                "--output-format",
+                "plain",
+            ],
+        )
+        with self.assertRaisesRegex(ValueError, "not logged in"):
+            adapter.parse_thinking_values("not logged in", model="grok-4.5")
+
+    def test_rejects_an_unknown_option(self) -> None:
         adapter = GrokAdapter()
         with self.assertRaisesRegex(ValueError, "temperature is not a grok option"):
             adapter.validate_options({"temperature": "0.2"})
-        with self.assertRaisesRegex(
-            ValueError,
-            "thinking must be one of: none, minimal, low, medium, high, xhigh, max",
-        ):
-            adapter.validate_options({"thinking": "banana"})
+        adapter.validate_options({"thinking": "ultra"})
         with self.assertRaisesRegex(ValueError, "max_turns must be an integer"):
             adapter.validate_options({"max_turns": "0"})
 
