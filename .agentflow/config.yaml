@@ -1,0 +1,14 @@
+models:
+  grok:
+    provider: grok
+    model: grok-4.7
+    options:
+      thinking: medium
+
+roles:
+  developer:
+    default_model: grok
+  planner:
+    default_model: grok
+  reviewer:
+    default_model: grok

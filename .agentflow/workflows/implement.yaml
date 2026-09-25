@@ -1,0 +1,10 @@
+id: implement
+stages:
+  - id: implement
+    role: developer
+    depends_on: []
+    instructions:
+      - Implement the requested change.
+      - Verify the result with relevant checks or tests.
+completion:
+  stage: implement

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Run the workspace Agentflow CLI from any directory.
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec uv run --project "$root" agentflow "$@"
