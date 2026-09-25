@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
-from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec, ModelCatalog
+from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec, ModelCatalog, ProviderOption
 from agentflow_kernel.provider_events import classify_provider_error, provider_error_message
 
 
@@ -60,26 +60,42 @@ class CodexAdapter(BaseCLIAdapter):
         if not isinstance(models, list):
             raise ValueError("codex model catalog has no models.")
         ids: list[str] = []
-        thinking: list[tuple[str, tuple[str, ...]]] = []
+        option_values: list[tuple[str, str, tuple[str, ...]]] = []
         for item in models:
             if not isinstance(item, dict) or item.get("visibility") not in {None, "list"}:
                 continue
             slug = item.get("slug")
             if isinstance(slug, str) and slug and slug not in ids:
                 ids.append(slug)
-                thinking.append((slug, _reasoning_levels(item.get("supported_reasoning_levels"))))
+                option_values.append(
+                    (slug, "model_reasoning_effort", _reasoning_levels(item.get("supported_reasoning_levels")))
+                )
         if not ids:
             raise ValueError("codex model catalog is empty.")
-        return ModelCatalog(tuple(ids), thinking=tuple(thinking))
+        return ModelCatalog(tuple(ids), option_values=tuple(option_values))
 
-    def thinking_command(self, model: str) -> list[str]:
+    def provider_options(self) -> tuple[ProviderOption, ...]:
+        return (
+            ProviderOption(
+                "model_reasoning_effort",
+                prompt=True,
+                allow_default=True,
+                overridable=True,
+            ),
+        )
+
+    def option_values_command(self, name: str, model: str) -> list[str] | None:
         del model
+        if name != "model_reasoning_effort":
+            return None
         return self.model_catalog_command()
 
-    def parse_thinking_values(self, text: str, *, model: str) -> tuple[str, ...]:
-        values = self.parse_model_catalog(text).thinking_for(model)
+    def parse_option_values(self, name: str, text: str, *, model: str) -> tuple[str, ...]:
+        if name != "model_reasoning_effort":
+            raise ValueError(f"codex does not list values for {name}.")
+        values = self.parse_model_catalog(text).values_for(model, name)
         if values is None:
-            raise ValueError(f"codex did not list thinking values for {model}.")
+            raise ValueError(f"codex did not list {name} values for {model}.")
         return values
 
     def validate_options(self, options: Mapping[str, str]) -> None:
@@ -186,7 +202,7 @@ def _append_options(cmd: list[str], options: Optional[Mapping[str, str]]) -> Non
 
 
 # Semantic option names that do not match a Codex config key.
-_CODEX_CONFIG_KEYS = {"thinking": "model_reasoning_effort"}
+_CODEX_CONFIG_KEYS: dict[str, str] = {}
 _TOML_BARE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?|true|false")
 
 

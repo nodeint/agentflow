@@ -67,12 +67,12 @@ class AgentToolRunner:
 
         resolved_options = dict(options or {})
         adapter.validate_options(resolved_options)
-        thinking = resolved_options.get("thinking") or None
+        profile = adapter.profile_options(resolved_options)
         store = SessionStore(workspace_path)
         record, is_new, context = store.load_or_create(
             provider_key,
             model,
-            thinking,
+            profile,
             workspace_path,
             session_id,
             stage_id,
@@ -82,7 +82,7 @@ class AgentToolRunner:
             resume_execution_id=resume_execution_id,
         )
         if not is_new:
-            self._validate_session_profile(record.provider, record.model, record.thinking, provider_key, model, thinking)
+            self._validate_session_profile(record.provider, record.model, record.options, provider_key, model, profile)
         starts_new_session = is_new
 
         new_session = adapter.create_new_session() if starts_new_session else None
@@ -120,7 +120,7 @@ class AgentToolRunner:
         event_reporter.emit(
             "provider.stage_started",
             f"{provider_key}/{model}",
-            {"thinking": thinking} if thinking else None,
+            {"options": profile} if profile else None,
         )
 
         try:
@@ -151,7 +151,7 @@ class AgentToolRunner:
 
         record.agent_id = parsed_provider_id or record.agent_id
         record.model = model
-        record.thinking = thinking
+        record.options = profile
         record.workspace = str(workspace_path)
         outcome = None
         if invoke_error is None:
@@ -192,7 +192,7 @@ class AgentToolRunner:
         session_status = store.read_session_status(context.session_id)
         return {
             "agent_id": record.agent_id or "",
-            "thinking": record.thinking or "",
+            "options": dict(record.options),
             "session_id": context.session_id,
             "execution_id": context.execution_id,
             "artifact_directory": str(context.artifact_directory),
@@ -265,14 +265,14 @@ class AgentToolRunner:
         self,
         previous_provider: str,
         previous_model: str,
-        previous_thinking: Optional[str],
+        previous_options: Mapping[str, str],
         provider: str,
         model: str,
-        thinking: Optional[str],
+        options: Mapping[str, str],
     ) -> None:
-        previous_profile = (previous_provider, previous_model, previous_thinking)
-        requested_profile = (provider, model, thinking)
+        previous_profile = (previous_provider, previous_model, dict(previous_options))
+        requested_profile = (provider, model, dict(options))
         if previous_profile != requested_profile:
             raise ValueError(
-                "Cannot resume an agent session with a different provider, model, or thinking level."
+                "Cannot resume an agent session with a different provider, model, or options."
             )

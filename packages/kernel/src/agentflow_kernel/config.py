@@ -23,11 +23,6 @@ class StageTarget:
     def __post_init__(self) -> None:
         object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
 
-    @property
-    def thinking(self) -> Optional[str]:
-        value = self.options.get("thinking")
-        return value or None
-
 
 def load_yaml_mapping(path: Path) -> dict[str, Any]:
     """Read an Agentflow configuration document as a mapping."""
@@ -51,31 +46,27 @@ def resolve_stage_target(
     *,
     provider: Optional[str] = None,
     model: Optional[str] = None,
-    thinking: Optional[str] = None,
+    options: Optional[Mapping[str, str]] = None,
 ) -> StageTarget:
     if (provider is None) != (model is None):
         raise ConfigurationError(
             "Pass both --provider and --model to override the resolved stage model, or omit both."
         )
     if provider is not None and model is not None:
-        return StageTarget(
-            provider=provider,
-            model=model,
-            options=_thinking_options(thinking),
-        )
+        return StageTarget(provider=provider, model=model, options=dict(options or {}))
     workflow = load_named_workflow(workspace, workflow_id)
     stage = workflow.stages.get(stage_id)
     if stage is None:
         raise ConfigurationError(f"Stage not found: {stage_id}")
     config = load_yaml_mapping(workspace / ".agentflow/config.yaml")
-    return resolve_stage_spec(config, stage, thinking=thinking)
+    return resolve_stage_spec(config, stage, options=options)
 
 
 def resolve_stage_spec(
     config: Mapping[str, Any],
     stage: StageSpec,
     *,
-    thinking: Optional[str] = None,
+    options: Optional[Mapping[str, str]] = None,
 ) -> StageTarget:
     """Resolve one already loaded stage against a config mapping."""
     model_field = (
@@ -88,13 +79,12 @@ def resolve_stage_spec(
         stage.role,
         model_name=stage.model_name,
         model_field=model_field,
-        thinking=stage.thinking,
-        thinking_label=f"Stage {stage.id}",
+        options=dict(stage.options),
     )
     return StageTarget(
         provider=declared.provider,
         model=declared.model,
-        options=_with_thinking(declared.options, thinking),
+        options=_merge_options(declared.options, options),
     )
 
 
@@ -104,7 +94,7 @@ def resolve_role_target(
     *,
     provider: Optional[str] = None,
     model: Optional[str] = None,
-    thinking: Optional[str] = None,
+    options: Optional[Mapping[str, str]] = None,
 ) -> StageTarget:
     if (provider is None) != (model is None):
         raise ConfigurationError(
@@ -114,23 +104,14 @@ def resolve_role_target(
     if provider is not None and model is not None:
         roles = _mapping(config.get("roles"), "roles")
         _mapping(roles.get(role), f"roles.{role}")
-        return StageTarget(
-            provider=provider,
-            model=model,
-            options=_thinking_options(thinking),
-        )
-    return _resolve_role_cascade(config, role, thinking=thinking)
+        return StageTarget(provider=provider, model=model, options=dict(options or {}))
+    return _resolve_role_cascade(config, role, options=options)
 
 
 def load_model_target(config: Mapping[str, Any], model_name: str) -> StageTarget:
     """Resolve one named model entry without role or stage overrides."""
     models = _mapping(config.get("models"), "models")
     model_config = _mapping(models.get(model_name), f"models.{model_name}")
-    if "thinking" in model_config:
-        raise ConfigurationError(
-            f"models.{model_name}.thinking is not supported. "
-            f"Put CLI parameters under models.{model_name}.options."
-        )
     return StageTarget(
         provider=_string(model_config.get("provider"), f"models.{model_name}.provider"),
         model=_string(model_config.get("model"), f"models.{model_name}.model"),
@@ -144,23 +125,16 @@ def _resolve_role_cascade(
     *,
     model_name: Optional[str] = None,
     model_field: Optional[str] = None,
-    thinking: Optional[str] = None,
-    thinking_label: Optional[str] = None,
+    options: Optional[Mapping[str, str]] = None,
 ) -> StageTarget:
     roles = _mapping(config.get("roles"), "roles")
     role = _mapping(roles.get(role_key), f"roles.{role_key}")
     resolved_field = model_field or f"roles.{role_key}.default_model"
     resolved_model_name = _string(model_name or role.get("default_model"), resolved_field)
     target = load_model_target(config, resolved_model_name)
-    options = dict(target.options)
-    role_thinking = role.get("thinking")
-    if isinstance(role_thinking, str):
-        options["thinking"] = _string(role_thinking, f"roles.{role_key}.thinking")
-    if thinking is not None:
-        options["thinking"] = _string(
-            thinking, thinking_label or f"roles.{role_key}.thinking"
-        )
-    return StageTarget(provider=target.provider, model=target.model, options=options)
+    role_options = _options(role.get("options"), f"roles.{role_key}.options")
+    merged = _merge_options(target.options, role_options, options)
+    return StageTarget(provider=target.provider, model=target.model, options=merged)
 
 
 def _mapping(value: Any, field: str) -> dict[str, Any]:
@@ -192,14 +166,9 @@ def _options(value: Any, field: str) -> dict[str, str]:
     return parsed
 
 
-def _thinking_options(thinking: Optional[str]) -> dict[str, str]:
-    if thinking is None:
-        return {}
-    return {"thinking": _string(thinking, "thinking")}
-
-
-def _with_thinking(options: Mapping[str, str], thinking: Optional[str]) -> dict[str, str]:
-    resolved = dict(options)
-    if thinking is not None:
-        resolved["thinking"] = _string(thinking, "thinking")
-    return resolved
+def _merge_options(*layers: Optional[Mapping[str, str]]) -> dict[str, str]:
+    merged: dict[str, str] = {}
+    for layer in layers:
+        if layer:
+            merged.update(layer)
+    return merged

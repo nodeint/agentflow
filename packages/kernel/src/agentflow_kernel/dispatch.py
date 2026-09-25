@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from .config import ConfigurationError, resolve_stage_target
 from .agent_runner import AgentToolRunner
@@ -22,7 +22,7 @@ class StageDispatchRequest:
     prior_session_id: Optional[str] = None
     provider: Optional[str] = None
     model: Optional[str] = None
-    thinking: Optional[str] = None
+    options: Optional[dict[str, str]] = None
     stage_attempt: Optional[int] = None
     execution_order: Optional[int] = None
 
@@ -36,13 +36,13 @@ class StageDispatchResult:
     session_status: str
     response: str
     agent_id: str = ""
-    thinking: str = ""
+    options: dict[str, str] | None = None
     artifact_directory: str = ""
 
-    def to_json(self) -> dict[str, str]:
+    def to_json(self) -> dict[str, Any]:
         return {
             "agent_id": self.agent_id,
-            "thinking": self.thinking,
+            "options": dict(self.options or {}),
             "session_id": self.session_id,
             "execution_id": self.execution_id,
             "artifact_directory": self.artifact_directory,
@@ -64,7 +64,7 @@ def dispatch_named_stage(
         request.stage_id,
         provider=request.provider,
         model=request.model,
-        thinking=request.thinking,
+        options=request.options,
     )
     workflow = load_named_workflow(workspace, request.workflow_id)
     session_id = request.session_id
@@ -106,7 +106,7 @@ def dispatch_named_stage(
         session_status=str(result.get("session_status") or ""),
         response=str(result.get("response") or ""),
         agent_id=str(result.get("agent_id") or ""),
-        thinking=str(result.get("thinking") or ""),
+        options=dict(result.get("options") or {}),
         artifact_directory=str(result.get("artifact_directory") or ""),
     )
 

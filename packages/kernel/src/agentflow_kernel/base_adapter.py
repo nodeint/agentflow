@@ -19,14 +19,30 @@ class NewSession:
 
 
 @dataclass(frozen=True)
+class ProviderOption:
+    """One provider CLI option.
+
+    `prompt` asks for the option after a model is chosen. `allow_default`
+    keeps the provider's own value when the user leaves it unset.
+    `overridable` lets a role, stage, or turn replace the model value, and
+    that value is part of the provider session profile.
+    """
+
+    name: str
+    prompt: bool = False
+    allow_default: bool = True
+    overridable: bool = False
+
+
+@dataclass(frozen=True)
 class ModelCatalog:
     ids: tuple[str, ...]
     default_id: Optional[str] = None
-    thinking: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    option_values: tuple[tuple[str, str, tuple[str, ...]], ...] = ()
 
-    def thinking_for(self, model_id: str) -> Optional[tuple[str, ...]]:
-        for model, values in self.thinking:
-            if model == model_id:
+    def values_for(self, model_id: str, option: str) -> Optional[tuple[str, ...]]:
+        for model, name, values in self.option_values:
+            if model == model_id and name == option:
                 return values
         return None
 
@@ -52,15 +68,24 @@ class BaseCLIAdapter(ABC):
         del stdout
         raise ValueError(f"{self.command} does not list models.")
 
-    def thinking_command(self, model: str) -> List[str]:
-        """Argv that prints thinking values for one model."""
-        del model
-        raise ValueError(f"{self.command} does not list thinking values.")
+    def provider_options(self) -> tuple[ProviderOption, ...]:
+        """Options this provider accepts. Prompted options are asked after a model is chosen."""
+        return ()
 
-    def parse_thinking_values(self, text: str, *, model: str) -> tuple[str, ...]:
-        """Read thinking values for `model` from the thinking command's output."""
-        del text, model
-        raise ValueError(f"{self.command} does not list thinking values.")
+    def profile_options(self, options: Mapping[str, str]) -> Dict[str, str]:
+        """Overridable options that identify a provider session."""
+        names = {item.name for item in self.provider_options() if item.overridable}
+        return {key: options[key] for key in options if key in names}
+
+    def option_values_command(self, name: str, model: str) -> Optional[List[str]]:
+        """Argv that lists values for one option. None when the catalog already has them."""
+        del name, model
+        return None
+
+    def parse_option_values(self, name: str, text: str, *, model: str) -> tuple[str, ...]:
+        """Read option values from the option command's output."""
+        del name, text, model
+        raise ValueError(f"{self.command} does not list option values.")
 
     def create_new_session(self) -> NewSession:
         return NewSession()

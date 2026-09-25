@@ -173,8 +173,8 @@ class DoctorTests(unittest.TestCase):
             config_path = workspace / ".agentflow" / "config.yaml"
             config_path.write_text(
                 config_path.read_text(encoding="utf-8").replace(
-                    "      thinking: high\n",
-                    '      thinking: high\n      nope: "1"\n',
+                    "      reasoning-effort: high\n",
+                    '      reasoning-effort: high\n      nope: "1"\n',
                     1,
                 ),
                 encoding="utf-8",
@@ -195,14 +195,14 @@ class DoctorTests(unittest.TestCase):
         )
         self.assertTrue(workflows.ok)
 
-    def test_does_not_reject_thinking_against_a_builtin_list(self) -> None:
+    def test_does_not_reject_an_unlisted_effort_value(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             _write_stage_project(workspace)
             workflow = workspace / ".agentflow" / "workflows" / "plan-implement.yaml"
             workflow.write_text(
                 workflow.read_text(encoding="utf-8").replace(
-                    "thinking: high", "thinking: banana", 1
+                    "model_reasoning_effort: high", "model_reasoning_effort: banana", 1
                 ),
                 encoding="utf-8",
             )

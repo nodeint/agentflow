@@ -15,6 +15,7 @@ from agentflow_kernel.runtime import log
 from agentflow_kernel.session_store import SessionStore
 
 from ..display import print_agent, print_error, print_notice
+from .init import _parse_options
 from ..workspace import find_workspace, invocation_cwd, resolve_prompt
 
 agent_app = typer.Typer(
@@ -26,9 +27,9 @@ agent_app = typer.Typer(
 _ROLE_HELP = "Key under roles in .agentflow/config.yaml. The key must exist."
 _PROVIDER_HELP = "Provider for this role. Pass with --model, or omit both."
 _MODEL_HELP = "Native model id for this role. Pass with --provider, or omit both."
-_THINKING_HELP = (
-    "Overrides options.thinking for this turn. "
-    "With --provider and --model, this is the only option sent."
+_OPTION_HELP = (
+    "KEY=VALUE overriding one provider option for this turn. "
+    "With --provider and --model, only the options you pass are sent."
 )
 _PROMPT_HELP = "Prompt text."
 _FILE_HELP = "Read the prompt from this file."
@@ -76,9 +77,9 @@ def agent_start(
         Optional[str],
         typer.Option("--model", help=_MODEL_HELP, show_default=False),
     ] = None,
-    thinking: Annotated[
-        Optional[str],
-        typer.Option("--thinking", help=_THINKING_HELP, show_default=False),
+    option: Annotated[
+        Optional[list[str]],
+        typer.Option("--option", help=_OPTION_HELP, show_default=False),
     ] = None,
     prompt: Annotated[
         Optional[str],
@@ -102,7 +103,7 @@ def agent_start(
             session_id=None,
             provider=provider,
             model=model,
-            thinking=thinking,
+            options=tuple(option or ()),
             prompt=prompt,
             prompt_file=prompt_file,
             prompt_stdin=prompt_stdin,
@@ -123,9 +124,9 @@ def agent_continue(
         Optional[str],
         typer.Option("--model", help=_MODEL_HELP, show_default=False),
     ] = None,
-    thinking: Annotated[
-        Optional[str],
-        typer.Option("--thinking", help=_THINKING_HELP, show_default=False),
+    option: Annotated[
+        Optional[list[str]],
+        typer.Option("--option", help=_OPTION_HELP, show_default=False),
     ] = None,
     prompt: Annotated[
         Optional[str],
@@ -150,7 +151,7 @@ def agent_continue(
             session_id=session,
             provider=provider,
             model=model,
-            thinking=thinking,
+            options=tuple(option or ()),
             prompt=prompt,
             prompt_file=prompt_file,
             prompt_stdin=prompt_stdin,
@@ -166,7 +167,7 @@ def _run_agent(
     session_id: Optional[str],
     provider: Optional[str],
     model: Optional[str],
-    thinking: Optional[str],
+    options: tuple[str, ...] = (),
     prompt: Optional[str],
     prompt_file: Optional[str],
     prompt_stdin: bool,
@@ -184,7 +185,7 @@ def _run_agent(
         session_id=session_id,
         provider=provider,
         model=model,
-        thinking=thinking,
+        options=options,
         prompt=prompt,
         prompt_file=prompt_file,
         prompt_stdin=prompt_stdin,
@@ -200,7 +201,7 @@ def dispatch_agent(
     session_id: Optional[str],
     provider: Optional[str],
     model: Optional[str],
-    thinking: Optional[str],
+    options: tuple[str, ...] = (),
     prompt: Optional[str],
     prompt_file: Optional[str],
     prompt_stdin: bool,
@@ -212,7 +213,7 @@ def dispatch_agent(
         role,
         provider=provider,
         model=model,
-        thinking=thinking,
+        options=_parse_options(options) or None,
     )
     resolved_session_id, created_session = _resolve_session_id(
         workspace,
@@ -225,10 +226,10 @@ def dispatch_agent(
         previous = SessionStore(workspace).latest_execution(resolved_session_id)
         if previous is not None:
             resume_execution_id = previous.execution_id
-    thinking_label = target.thinking or "default"
+    option_label = ", ".join(f"{key}: {value}" for key, value in target.options.items()) or "default"
     print_notice(
         f"agent {role} · {target.provider}/{target.model} "
-        f"(thinking: {thinking_label})."
+        f"({option_label})."
     )
     previous_handlers = {
         signal.SIGINT: signal.signal(signal.SIGINT, raise_cancellation),

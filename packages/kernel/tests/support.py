@@ -11,12 +11,15 @@ import json
 import tempfile
 from typing import Optional, Tuple
 
-from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec
+from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec, ProviderOption
 from agentflow_kernel.session_records import create_workflow_session
 
 
 class FakeAdapter(BaseCLIAdapter):
     command = "fake"
+
+    def provider_options(self) -> tuple[ProviderOption, ...]:
+        return (ProviderOption("effort", prompt=True, allow_default=True, overridable=True),)
 
     def validate_options(self, options: Optional[dict[str, str]] = None) -> None:
         del options
@@ -161,19 +164,20 @@ models:
     provider: grok
     model: grok-4.6
     options:
-      thinking: high
+      reasoning-effort: high
   gpt-terra:
     provider: codex
     model: gpt-5.6-terra
     options:
-      thinking: medium
+      model_reasoning_effort: medium
       temperature: "0.2"
 roles:
   developer:
     default_model: grok
   reviewer:
     default_model: gpt-terra
-    thinking: medium
+    options:
+      model_reasoning_effort: medium
 """
 
 STAGE_WORKFLOW = """\
@@ -187,7 +191,8 @@ stages:
   - id: review-work
     role: reviewer
     model: gpt-terra
-    thinking: high
+    options:
+      model_reasoning_effort: high
     depends_on:
       - implement
 """
@@ -232,7 +237,7 @@ models:
     provider: fake
     model: m1
     options:
-      thinking: medium
+      effort: medium
 roles:
   planner:
     default_model: fake-model

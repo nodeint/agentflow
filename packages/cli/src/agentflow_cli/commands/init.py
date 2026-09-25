@@ -4,7 +4,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Callable, Mapping, Optional
 
@@ -44,11 +44,11 @@ def init_command(
         Optional[str],
         typer.Option("--model", help="Model id for the default model. Pass with --provider."),
     ] = None,
-    thinking: Annotated[
-        Optional[str],
+    option: Annotated[
+        Optional[list[str]],
         typer.Option(
-            "--thinking",
-            help="options.thinking for the default model. Omit it to keep the provider default.",
+            "--option",
+            help="KEY=VALUE stored under models.*.options. Repeat for more than one. Omit a prompted option to keep the provider default.",
         ),
     ] = None,
     preset: Annotated[
@@ -62,9 +62,8 @@ def init_command(
     """Create a minimal config, one workflow, and a sessions gitignore.
 
     In a terminal, choose the provider and model from the lists reported by
-    the provider CLIs. Thinking values are the ones that provider lists for
-    the model you picked. Pass --provider and --model together when input is
-    not a terminal.
+    the provider CLIs, then any option that provider asks for on that model.
+    Pass --provider and --model together when input is not a terminal.
     --preset implement writes one developer stage. plan writes a
     planner and a reviewer. A separate reviewer model is asked only in the
     interactive plan flow.
@@ -78,7 +77,7 @@ def init_command(
             invocation_cwd(),
             provider=provider,
             model=model,
-            thinking=thinking,
+            options=tuple(option or ()),
             preset=preset,
             interactive=interactive,
         )
@@ -89,7 +88,7 @@ def init_command(
 class ModelChoice:
     provider: str
     model: str
-    thinking: Optional[str] = None
+    options: Mapping[str, str] = field(default_factory=dict)
 
 
 def run_init(
@@ -97,7 +96,7 @@ def run_init(
     *,
     provider: Optional[str] = None,
     model: Optional[str] = None,
-    thinking: Optional[str] = None,
+    options: tuple[str, ...] = (),
     preset: str = "implement",
     interactive: bool = False,
     adapters: Optional[Mapping[str, BaseCLIAdapter]] = None,
@@ -115,8 +114,8 @@ def run_init(
     if (provider is None) != (model is None):
         print_error("Pass both --provider and --model, or omit both.")
         return 2
-    if thinking is not None and provider is None:
-        print_error("Pass --provider and --model with --thinking.")
+    if options and provider is None:
+        print_error("Pass --provider and --model with --option.")
         return 2
     if provider is None and not interactive:
         print_error("Pass --provider and --model when init is not interactive.")
@@ -137,7 +136,7 @@ def run_init(
             prompt,
             provider=provider,
             model=model,
-            thinking=thinking,
+            options=_parse_options(options),
             preset=preset,
             interactive=interactive,
             run_command=execute,
@@ -162,7 +161,7 @@ class Prompter:
     def select_model(self, provider: str, catalog: ModelCatalog, message: str) -> str:
         raise NotImplementedError
 
-    def select_thinking(self, values: tuple[str, ...], message: str) -> str:
+    def select_option(self, name: str, values: tuple[str, ...], *, allow_default: bool) -> str:
         raise NotImplementedError
 
     def confirm(self, message: str) -> bool:
@@ -203,19 +202,17 @@ class InquirerPrompter(Prompter):
             raise ValueError(f"Unknown model: {result}.")
         return str(result)
 
-    def select_thinking(self, values: tuple[str, ...], message: str) -> str:
+    def select_option(self, name: str, values: tuple[str, ...], *, allow_default: bool) -> str:
         if not values:
             return ""
-        result = inquirer.select(
-            message=message,
-            choices=[
-                {"name": "provider default", "value": ""},
-                *({"name": value, "value": value} for value in values),
-            ],
-            default="",
-        ).execute()
-        if result not in {"", *values}:
-            raise ValueError(f"Unknown thinking value: {result}.")
+        choices: list[dict[str, str]] = []
+        if allow_default:
+            choices.append({"name": "provider default", "value": ""})
+        choices.extend({"name": value, "value": value} for value in values)
+        result = inquirer.select(message=name, choices=choices, default="" if allow_default else values[0]).execute()
+        allowed = {"", *values} if allow_default else set(values)
+        if result not in allowed:
+            raise ValueError(f"Unknown {name} value: {result}.")
         return "" if result is None else str(result)
 
     def confirm(self, message: str) -> bool:
@@ -232,7 +229,7 @@ def _choices(
     *,
     provider: Optional[str],
     model: Optional[str],
-    thinking: Optional[str],
+    options: Mapping[str, str],
     preset: str,
     interactive: bool,
     run_command: Callable[[list[str]], str],
@@ -243,29 +240,16 @@ def _choices(
         adapter = adapters[provider]
         catalog = _load_catalog(adapter, which, run_command)
         model = prompt.select_model(provider, catalog, "Model")
-        thinking_values = _load_thinking(adapter, model, catalog, which, run_command)
-        thinking_value = prompt.select_thinking(thinking_values, "Thinking")
+        stored = _prompt_options(adapter, model, catalog, which, run_command, prompt)
     else:
         adapter = _require_adapter(adapters, provider)
         assert model is not None
         catalog = _load_catalog(adapter, which, run_command)
         model = _known_model(model, catalog)
-        if thinking is not None and thinking.strip():
-            thinking_values = _load_thinking(adapter, model, catalog, which, run_command)
-            thinking_value = _accepted_thinking(thinking, thinking_values, model)
-        else:
-            thinking_value = None
+        stored = _accepted_options(adapter, model, catalog, which, run_command, options)
     if not model or not model.strip():
         raise ValueError("Model is required.")
-    primary = ModelChoice(
-        provider=provider,
-        model=model.strip(),
-        thinking=_accepted_thinking(
-            thinking_value,
-            thinking_values if thinking_value else (),
-            model,
-        ),
-    )
+    primary = ModelChoice(provider=provider, model=model.strip(), options=stored)
     if preset != "plan" or not interactive:
         return primary, None
     if prompt.confirm("Use the default model for both planner and reviewer?"):
@@ -277,14 +261,13 @@ def _choices(
     reviewer_model = prompt.select_model(
         reviewer_provider, reviewer_catalog, "Reviewer model"
     )
-    reviewer_values = _load_thinking(
-        reviewer_adapter, reviewer_model, reviewer_catalog, which, run_command
+    reviewer_options = _prompt_options(
+        reviewer_adapter, reviewer_model, reviewer_catalog, which, run_command, prompt
     )
-    reviewer_thinking = prompt.select_thinking(reviewer_values, "Reviewer thinking")
     return primary, ModelChoice(
         provider=reviewer_provider,
         model=reviewer_model.strip(),
-        thinking=_accepted_thinking(reviewer_thinking, reviewer_values, reviewer_model),
+        options=reviewer_options,
     )
 
 
@@ -365,13 +348,10 @@ def _render_config(
                 f"    model: {_yaml_scalar(choice.model)}",
             ]
         )
-        if choice.thinking is not None:
-            lines.extend(
-                [
-                    "    options:",
-                    f"      thinking: {_yaml_scalar(choice.thinking)}",
-                ]
-            )
+        if choice.options:
+            lines.append("    options:")
+            for name, value in choice.options.items():
+                lines.append(f"      {name}: {_yaml_scalar(value)}")
     lines.append("roles:")
     for role, model_name in roles:
         lines.extend([f"  {role}:", f"    default_model: {model_name}"])
@@ -454,29 +434,93 @@ def _known_model(model: str, catalog: ModelCatalog) -> str:
     return value
 
 
-def _load_thinking(
+def _parse_options(pairs: tuple[str, ...]) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for pair in pairs:
+        if "=" not in pair:
+            raise ValueError(f"Option must be KEY=VALUE: {pair}.")
+        name, value = pair.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if not name or not value:
+            raise ValueError(f"Option must be KEY=VALUE: {pair}.")
+        parsed[name] = value
+    return parsed
+
+
+def _prompt_options(
     adapter: BaseCLIAdapter,
     model: str,
     catalog: ModelCatalog,
     which: Callable[[str], Optional[str]],
     run_command: Callable[[list[str]], str],
-) -> tuple[str, ...]:
-    found = catalog.thinking_for(model)
+    prompt: Prompter,
+) -> dict[str, str]:
+    stored: dict[str, str] = {}
+    for spec in adapter.provider_options():
+        if not spec.prompt:
+            continue
+        values = _load_option_values(adapter, spec.name, model, catalog, which, run_command)
+        if not values:
+            continue
+        picked = prompt.select_option(spec.name, values, allow_default=spec.allow_default)
+        if picked:
+            stored[spec.name] = picked
+    return stored
+
+
+def _load_option_values(
+    adapter: BaseCLIAdapter,
+    name: str,
+    model: str,
+    catalog: ModelCatalog,
+    which: Callable[[str], Optional[str]],
+    run_command: Callable[[list[str]], str],
+) -> Optional[tuple[str, ...]]:
+    found = catalog.values_for(model, name)
     if found is not None:
         return found
+    argv = adapter.option_values_command(name, model)
+    if argv is None:
+        return None
     if which(adapter.command) is None:
         raise ValueError(
-            f"{adapter.command} is not on PATH, so its thinking values could not be listed."
+            f"{adapter.command} is not on PATH, so its {name} values could not be listed."
         )
     try:
-        text = run_command(adapter.thinking_command(model))
+        text = run_command(argv)
     except ValueError as exc:
         text = str(exc)
     except OSError as exc:
         raise ValueError(
-            f"Could not list {adapter.command} thinking values for {model}: {exc}"
+            f"Could not list {adapter.command} {name} values for {model}: {exc}"
         ) from exc
-    return adapter.parse_thinking_values(text, model=model)
+    return adapter.parse_option_values(name, text, model=model)
+
+
+def _accepted_options(
+    adapter: BaseCLIAdapter,
+    model: str,
+    catalog: ModelCatalog,
+    which: Callable[[str], Optional[str]],
+    run_command: Callable[[list[str]], str],
+    options: Mapping[str, str],
+) -> dict[str, str]:
+    if not options:
+        return {}
+    adapter.validate_options(options)
+    stored: dict[str, str] = {}
+    for name, value in options.items():
+        values = _load_option_values(adapter, name, model, catalog, which, run_command)
+        if values is None:
+            stored[name] = value
+            continue
+        if value not in values:
+            if not values:
+                raise ValueError(f"{model} does not accept {name}.")
+            raise ValueError(f"{name} must be one of: {', '.join(values)}.")
+        stored[name] = value
+    return stored
 
 
 def _run_command(argv: list[str]) -> str:
@@ -511,19 +555,6 @@ def _require_adapter(
         supported = ", ".join(sorted(adapters))
         raise ValueError(f"Unknown provider: {provider}. Supported: {supported}.")
     return adapter
-
-
-def _accepted_thinking(
-    thinking: Optional[str], values: tuple[str, ...], model: str
-) -> Optional[str]:
-    if thinking is None or not thinking.strip():
-        return None
-    value = thinking.strip()
-    if value not in values:
-        if not values:
-            raise ValueError(f"{model} does not accept thinking.")
-        raise ValueError(f"thinking must be one of: {', '.join(values)}.")
-    return value
 
 
 _PLAIN_SCALAR = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*")

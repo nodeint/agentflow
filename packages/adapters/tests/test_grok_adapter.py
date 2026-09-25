@@ -105,22 +105,22 @@ class GrokAdapterTests(unittest.TestCase):
             "  - grok-4.6\n"
         )
         self.assertEqual(catalog.ids, ("grok-4.7", "grok-4.6"))
-        self.assertIsNone(catalog.thinking_for("grok-4.7"))
+        self.assertIsNone(catalog.values_for("grok-4.7", "reasoning-effort"))
         self.assertEqual(catalog.default_id, "grok-4.7")
         self.assertEqual(GrokAdapter().model_catalog_command(), ["grok", "models"])
 
-    def test_reads_thinking_values_for_the_selected_model(self) -> None:
+    def test_reads_effort_values_for_the_selected_model(self) -> None:
         adapter = GrokAdapter()
         text = (
             "--effort/--reasoning-effort: unknown effort level 'agentflow-probe'; "
             "use one of: high, medium, low\n"
         )
         self.assertEqual(
-            adapter.parse_thinking_values(text, model="grok-4.5"),
+            adapter.parse_option_values("reasoning-effort", text, model="grok-4.5"),
             ("high", "medium", "low"),
         )
         self.assertEqual(
-            adapter.thinking_command("grok-4.5"),
+            adapter.option_values_command("reasoning-effort", "grok-4.5"),
             [
                 "grok",
                 "-m",
@@ -134,13 +134,13 @@ class GrokAdapterTests(unittest.TestCase):
             ],
         )
         with self.assertRaisesRegex(ValueError, "not logged in"):
-            adapter.parse_thinking_values("not logged in", model="grok-4.5")
+            adapter.parse_option_values("reasoning-effort", "not logged in", model="grok-4.5")
 
     def test_rejects_an_unknown_option(self) -> None:
         adapter = GrokAdapter()
         with self.assertRaisesRegex(ValueError, "temperature is not a grok option"):
             adapter.validate_options({"temperature": "0.2"})
-        adapter.validate_options({"thinking": "ultra"})
+        adapter.validate_options({"reasoning-effort": "ultra"})
         with self.assertRaisesRegex(ValueError, "max_turns must be an integer"):
             adapter.validate_options({"max_turns": "0"})
 
@@ -153,7 +153,7 @@ class GrokAdapterTests(unittest.TestCase):
             new_agent_id=None,
             prompt_file=Path("/tmp/prompt.txt"),
             last_message_file=Path("/tmp/last.txt"),
-            options={"thinking": "medium", "max_turns": "4"},
+            options={"reasoning-effort": "medium", "max_turns": "4"},
         )
         self.assertEqual(provider_commands()["grok"], GrokAdapter.command)
         self.assertEqual(

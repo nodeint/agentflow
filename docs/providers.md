@@ -9,7 +9,7 @@ models:
     provider: codex
     model: gpt-5
     options:
-      thinking: medium
+      model_reasoning_effort: medium
 
 roles:
   developer:
@@ -21,17 +21,20 @@ CLI.
 
 ## Options
 
-`thinking` is normalized across the supported providers. The allowed values
-are the ones that provider lists for the selected model. `agentflow init` and
-`agentflow config` read that list after the model is chosen.
+Each adapter names its own options and lists the values for the selected
+model. `agentflow init` and `agentflow config` ask for options marked as
+prompts. Leaving one unset keeps the provider default.
 
-- Codex reads `supported_reasoning_levels` from `codex debug models` and sends
-  the choice as `model_reasoning_effort`. Any other option is a Codex config
-  override passed as `codex exec -c key=value`.
-- Grok asks the `grok` CLI which efforts that model accepts and sends the
-  choice as `--reasoning-effort`. Grok also accepts `max_turns`, `tools`,
-  `disallowed_tools`, `permission_mode`, `rules`, `allow`, `deny`, and
-  `sandbox`. Other keys are rejected.
+- Codex prompts for `model_reasoning_effort`, read from
+  `supported_reasoning_levels` in `codex debug models`. Any other option is a
+  Codex config override passed as `codex exec -c key=value`.
+- Grok prompts for `reasoning-effort`, read from the `grok` CLI for that
+  model, and sends it as `--reasoning-effort`. Grok also accepts `max_turns`,
+  `tools`, `disallowed_tools`, `permission_mode`, `rules`, `allow`, `deny`,
+  and `sandbox`. Other keys are rejected.
+
+A role or stage `options` map overrides the same keys on the model. Only
+options the adapter marks as overridable are part of the provider session.
 
 ## Selection and overrides
 
@@ -43,12 +46,12 @@ stages:
   - id: security-review
     role: reviewer
     model: security-model
-    thinking: high
+    options:
+      model_reasoning_effort: high
 ```
 
-Model options provide the base configuration. A role-level `thinking` value
-overrides `options.thinking`, and a stage-level value overrides it for that
-turn.
+Model options provide the base configuration. A role `options` map overrides
+those keys, and a stage `options` map overrides them for that turn.
 
 Agentflow currently includes adapters for the headless `codex` and `grok` CLIs.
 Those CLIs own authentication, tool use, and agent execution; Agentflow owns

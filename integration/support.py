@@ -20,7 +20,7 @@ models:
     provider: grok
     model: grok-test
     options:
-      thinking: low
+      reasoning-effort: low
 roles:
   planner:
     default_model: grok-model
@@ -34,7 +34,7 @@ models:
     provider: codex
     model: codex-test
     options:
-      thinking: low
+      model_reasoning_effort: low
 roles:
   writer:
     default_model: codex-model

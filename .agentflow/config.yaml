@@ -3,7 +3,7 @@ models:
     provider: grok
     model: grok-4.7
     options:
-      thinking: medium
+      reasoning-effort: medium
 
 roles:
   developer:

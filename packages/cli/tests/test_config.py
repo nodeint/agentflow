@@ -24,7 +24,7 @@ models:
     provider: grok
     model: grok-4.6
     options:
-      thinking: medium
+      reasoning-effort: medium
       max_turns: "4"
   plain:
     provider: grok
@@ -185,7 +185,7 @@ class ConfigCommandTests(unittest.TestCase):
                     roles=("reviewer",),
                     provider="grok",
                     model="grok-4.6",
-                    thinking="high",
+                    options=("reasoning-effort=high",),
                     as_json=True,
                     which=_which,
                     run_command=_run_command,
@@ -195,10 +195,10 @@ class ConfigCommandTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(payload["created_model"], "reviewer")
             self.assertEqual(config["models"]["shared"]["model"], "grok-4.6")
-            self.assertEqual(config["models"]["shared"]["options"]["thinking"], "medium")
+            self.assertEqual(config["models"]["shared"]["options"]["reasoning-effort"], "medium")
             self.assertEqual(config["roles"]["developer"]["default_model"], "shared")
             self.assertEqual(config["roles"]["reviewer"]["default_model"], "reviewer")
-            self.assertEqual(config["roles"]["reviewer"]["thinking"], "high")
+            self.assertEqual(config["roles"]["reviewer"]["options"]["reasoning-effort"], "high")
             self.assertNotIn("options", config["models"]["reviewer"])
 
     def test_model_update_reports_every_role_using_the_key(self) -> None:
@@ -222,7 +222,7 @@ class ConfigCommandTests(unittest.TestCase):
             self.assertEqual(payload["updated_model"], "shared")
             self.assertEqual(payload["roles"], ["developer", "reviewer"])
             self.assertEqual(config["models"]["shared"]["model"], "grok-4.7")
-            self.assertEqual(config["models"]["shared"]["options"]["thinking"], "medium")
+            self.assertEqual(config["models"]["shared"]["options"]["reasoning-effort"], "medium")
             self.assertEqual(config["models"]["shared"]["options"]["max_turns"], "4")
 
     def test_one_model_name_can_be_assigned_to_several_roles(self) -> None:
@@ -286,7 +286,7 @@ class ConfigCommandTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(config["models"]["fast"]["provider"], "grok")
             self.assertEqual(config["models"]["fast"]["model"], "grok-4.7")
-            self.assertEqual(config["models"]["fast"]["options"]["thinking"], "medium")
+            self.assertEqual(config["models"]["fast"]["options"]["reasoning-effort"], "medium")
             self.assertEqual(config["roles"]["developer"]["default_model"], "shared")
             self.assertIn("ok", stdout.getvalue())
 
@@ -312,7 +312,7 @@ class ConfigCommandTests(unittest.TestCase):
         self.assertEqual(config["models"]["fresh"]["model"], "grok-4.7")
         self.assertEqual(config["roles"]["developer"]["default_model"], "shared")
 
-    def test_clear_role_thinking_keeps_the_model_name(self) -> None:
+    def test_clear_role_option_keeps_the_model_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             _project(workspace)
@@ -320,7 +320,7 @@ class ConfigCommandTests(unittest.TestCase):
             config_path.write_text(
                 CONFIG.replace(
                     "  reviewer:\n    default_model: shared\n",
-                    "  reviewer:\n    default_model: shared\n    thinking: high\n",
+                    "  reviewer:\n    default_model: shared\n    options:\n      reasoning-effort: high\n",
                 ),
                 encoding="utf-8",
             )
@@ -329,15 +329,15 @@ class ConfigCommandTests(unittest.TestCase):
                 code = run_config_role(
                     workspace,
                     roles=("reviewer",),
-                    clear_thinking=True,
+                    clear_options=("reasoning-effort",),
                     as_json=True,
                     which=_which,
                 )
             config = load_yaml_mapping(config_path)
             self.assertEqual(code, 0)
-            self.assertNotIn("thinking", config["roles"]["reviewer"])
+            self.assertNotIn("options", config["roles"]["reviewer"])
             self.assertEqual(config["roles"]["reviewer"]["default_model"], "shared")
-            self.assertEqual(config["models"]["shared"]["options"]["thinking"], "medium")
+            self.assertEqual(config["models"]["shared"]["options"]["reasoning-effort"], "medium")
 
 
 if __name__ == "__main__":

@@ -71,13 +71,13 @@ models:
     provider: codex
     model: gpt-5
     options:
-      thinking: medium
+      model_reasoning_effort: medium
 
   reviewer-model:
     provider: grok
     model: grok-4
     options:
-      thinking: high
+      reasoning-effort: high
 
 roles:
   planner:
@@ -86,8 +86,8 @@ roles:
     default_model: reviewer-model
 ```
 
-Use model identifiers supported by your installed provider CLIs. Thinking
-values are the ones that CLI lists for the model you picked.
+Use model identifiers supported by your installed provider CLIs. Prompted
+option values are the ones that CLI lists for the model you picked.
 
 `.agentflow/workflows/plan.yaml` defines the process:
 

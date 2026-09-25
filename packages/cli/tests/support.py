@@ -114,7 +114,7 @@ models:
     provider: fake
     model: m1
     options:
-      thinking: medium
+      effort: medium
 roles:
   planner:
     default_model: fake-model

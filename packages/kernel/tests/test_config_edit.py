@@ -16,7 +16,7 @@ from agentflow_kernel.config_edit import (
     inspect_config,
     patch_config_text,
     place_role_model,
-    set_role_thinking,
+    set_role_options,
     upsert_model,
 )
 from agentflow_kernel.workflow import StageSpec, WorkflowDocument
@@ -30,7 +30,7 @@ models:
     provider: grok
     model: grok-4.6
     options:
-      thinking: medium
+      reasoning-effort: medium
       temperature: "0.2"  # stable
   other:
     provider: codex
@@ -42,7 +42,8 @@ roles:
     default_model: shared
   reviewer:
     default_model: shared
-    thinking: low
+    options:
+      reasoning-effort: low
 """
 
 
@@ -53,7 +54,10 @@ def _workflow() -> WorkflowDocument:
             "implement": StageSpec(id="implement", role="developer"),
             "review": StageSpec(id="review", role="reviewer", model_name="other"),
             "audit": StageSpec(
-                id="audit", role="reviewer", model_name="shared", thinking="high"
+                id="audit",
+                role="reviewer",
+                model_name="shared",
+                options=(("reasoning-effort", "high"),),
             ),
             "plain-review": StageSpec(id="plain-review", role="reviewer"),
         },
@@ -73,7 +77,7 @@ class ConfigEditTests(unittest.TestCase):
         self.assertEqual(change.config["roles"]["developer"]["default_model"], "shared")
         self.assertEqual(change.config["roles"]["planner"]["default_model"], "shared")
         self.assertEqual(change.config["roles"]["reviewer"]["default_model"], "other")
-        self.assertEqual(change.config["roles"]["reviewer"]["thinking"], "low")
+        self.assertEqual(change.config["roles"]["reviewer"]["options"]["reasoning-effort"], "low")
         self.assertEqual(change.stages_updated, (("plan", "plain-review"),))
         self.assertEqual(change.stages_unchanged[0].stage, "review")
         self.assertEqual(change.stages_unchanged[0].ignores, ("role-model",))
@@ -86,7 +90,7 @@ class ConfigEditTests(unittest.TestCase):
             "reviewer",
             provider="grok",
             model="grok-4.7",
-            thinking="high",
+            options={"reasoning-effort": "high"},
             workflows=(_workflow(),),
         )
         self.assertEqual(change.created_model, "reviewer")
@@ -95,7 +99,7 @@ class ConfigEditTests(unittest.TestCase):
         self.assertEqual(change.config["models"]["reviewer"]["model"], "grok-4.7")
         self.assertNotIn("options", change.config["models"]["reviewer"])
         self.assertEqual(change.config["roles"]["reviewer"]["default_model"], "reviewer")
-        self.assertEqual(change.config["roles"]["reviewer"]["thinking"], "high")
+        self.assertEqual(change.config["roles"]["reviewer"]["options"]["reasoning-effort"], "high")
         self.assertEqual(change.config["roles"]["developer"]["default_model"], "shared")
         self.assertEqual(change.orphaned_models, ())
 
@@ -109,7 +113,7 @@ models:
     provider: grok
     model: grok-4.6
     options:
-      thinking: medium
+      reasoning-effort: medium
 roles:
   developer:
     default_model: shared
@@ -124,20 +128,22 @@ roles:
         self.assertEqual(change.config["roles"]["reviewer"]["default_model"], "plain")
         self.assertEqual(set(change.config["models"]), {"plain", "shared"})
 
-    def test_upsert_thinking_preserves_other_options(self) -> None:
+    def test_upsert_option_preserves_other_options(self) -> None:
         config = _config()
-        change = upsert_model(config, "shared", thinking="high", workflows=(_workflow(),))
+        change = upsert_model(
+            config, "shared", options={"reasoning-effort": "high"}, workflows=(_workflow(),)
+        )
         options = change.config["models"]["shared"]["options"]
-        self.assertEqual(options["thinking"], "high")
+        self.assertEqual(options["reasoning-effort"], "high")
         self.assertEqual(options["temperature"], "0.2")
         self.assertEqual(change.updated_model, "shared")
         self.assertEqual(change.roles, ("developer", "planner"))
         self.assertIn(("plan", "implement"), change.stages_updated)
         shielded = {stage.stage: stage.ignores for stage in change.stages_unchanged}
-        self.assertEqual(shielded["audit"], ("role-thinking",))
+        self.assertEqual(shielded["audit"], ("role-options",))
 
-    def test_clear_thinking_removes_only_the_thinking_option(self) -> None:
-        change = upsert_model(_config(), "shared", thinking=None)
+    def test_clear_option_removes_only_that_option(self) -> None:
+        change = upsert_model(_config(), "shared", options={"reasoning-effort": None})
         self.assertEqual(
             change.config["models"]["shared"]["options"], {"temperature": "0.2"}
         )
@@ -181,17 +187,19 @@ roles:
         parsed = load_yaml_mapping(write_config(patched))
         self.assertEqual(parsed["roles"]["developer"]["default_model"], "shared")
         self.assertEqual(parsed["roles"]["reviewer"]["default_model"], "other")
-        self.assertEqual(parsed["roles"]["reviewer"]["thinking"], "low")
+        self.assertEqual(parsed["roles"]["reviewer"]["options"]["reasoning-effort"], "low")
         self.assertEqual(parsed["models"]["shared"]["options"]["temperature"], "0.2")
 
     def test_patch_adds_a_model_and_a_role(self) -> None:
         config = _config()
-        created = upsert_model(config, "fast", provider="codex", model="gpt-5", thinking="low")
+        created = upsert_model(
+            config, "fast", provider="codex", model="gpt-5", options={"reasoning-effort": "low"}
+        )
         assigned = assign_roles(created.config, ("security",), "fast")
         patched = patch_config_text(SHARED, assigned.config)
         parsed = load_yaml_mapping(write_config(patched))
         self.assertEqual(parsed["models"]["fast"]["provider"], "codex")
-        self.assertEqual(parsed["models"]["fast"]["options"]["thinking"], "low")
+        self.assertEqual(parsed["models"]["fast"]["options"]["reasoning-effort"], "low")
         self.assertEqual(parsed["roles"]["security"]["default_model"], "fast")
         self.assertIn("# project models", patched)
         self.assertEqual(parsed["roles"]["developer"]["default_model"], "shared")
@@ -200,11 +208,13 @@ roles:
         with self.assertRaisesRegex(ConfigEditError, "both --provider and --model"):
             upsert_model(_config(), "shared", provider="grok")
 
-    def test_role_thinking_does_not_change_the_model(self) -> None:
-        change = set_role_thinking(_config(), "developer", "high", workflows=(_workflow(),))
+    def test_role_option_does_not_change_the_model(self) -> None:
+        change = set_role_options(
+            _config(), "developer", {"reasoning-effort": "high"}, workflows=(_workflow(),)
+        )
         self.assertEqual(change.roles, ("developer",))
-        self.assertEqual(change.config["models"]["shared"]["options"]["thinking"], "medium")
-        self.assertEqual(change.config["roles"]["developer"]["thinking"], "high")
+        self.assertEqual(change.config["models"]["shared"]["options"]["reasoning-effort"], "medium")
+        self.assertEqual(change.config["roles"]["developer"]["options"]["reasoning-effort"], "high")
         self.assertIn(("plan", "implement"), change.stages_updated)
 
     def test_new_role_points_at_an_existing_model(self) -> None:
@@ -217,14 +227,14 @@ roles:
         view = inspect_config(_config(), (_workflow(),))
         reviewer = next(role for role in view.roles if role.role == "reviewer")
         self.assertEqual(reviewer.model_name, "shared")
-        self.assertEqual(reviewer.thinking_from, "role")
+        self.assertEqual(reviewer.options["reasoning-effort"], "low")
         self.assertEqual(reviewer.shared_with, ("developer", "planner"))
         overrides = {
-            stage.stage: (stage.model_name, stage.thinking) for stage in reviewer.stages
+            stage.stage: (stage.model_name, dict(stage.options)) for stage in reviewer.stages
         }
-        self.assertEqual(overrides["review"], ("other", None))
-        self.assertEqual(overrides["audit"], ("shared", "high"))
-        self.assertEqual(overrides["plain-review"], (None, None))
+        self.assertEqual(overrides["review"], ("other", {}))
+        self.assertEqual(overrides["audit"], ("shared", {"reasoning-effort": "high"}))
+        self.assertEqual(overrides["plain-review"], (None, {}))
 
 
 if __name__ == "__main__":

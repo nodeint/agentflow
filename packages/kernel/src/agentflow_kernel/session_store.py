@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
 import uuid
 
 from .command_executor import TERMINATION_GRACE_SEC
@@ -49,13 +49,23 @@ from .stage_outcome import StageOutcome
 from .workflow import WorkflowDocument, load_workflow_document
 
 
+def _string_options(value: Any) -> Dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(key): str(item)
+        for key, item in value.items()
+        if isinstance(key, str) and isinstance(item, str)
+    }
+
+
 @dataclass
 class AgentSessionRecord:
     provider: str
     model: str
     workspace: str
     agent_id: Optional[str] = None
-    thinking: Optional[str] = None
+    options: Dict[str, str] = field(default_factory=dict)
     status: str = "new"
     history: List[Dict[str, str]] = field(default_factory=list)
 
@@ -74,7 +84,7 @@ class AgentSessionRecord:
             workspace=raw.get("workspace") or workspace,
             agent_id=raw.get("agent_id")
             or raw.get("native_session_id"),
-            thinking=raw.get("thinking"),
+            options=_string_options(raw.get("options")),
             status=raw.get("status") or "unknown",
             history=history if isinstance(history, list) else [],
         )
@@ -85,7 +95,7 @@ class AgentSessionRecord:
             "model": self.model,
             "workspace": self.workspace,
             "agent_id": self.agent_id,
-            "thinking": self.thinking,
+            "options": dict(self.options),
             "status": self.status,
             "history": self.history,
         }
@@ -127,7 +137,7 @@ class SessionStore:
         self,
         provider: str,
         model: str,
-        thinking: Optional[str],
+        options: Optional[Mapping[str, str]],
         workspace: Path,
         session_id: Optional[str],
         stage_id: str,
@@ -153,7 +163,7 @@ class SessionStore:
             context = self._create_execution(
                 provider,
                 model,
-                thinking,
+                options,
                 session_id,
                 stage_id,
                 stage_attempt,
@@ -161,7 +171,7 @@ class SessionStore:
                 prompt,
             )
             return (
-                AgentSessionRecord(provider, model, str(workspace), thinking=thinking),
+                AgentSessionRecord(provider, model, str(workspace), options=dict(options or {})),
                 True,
                 context,
             )
@@ -169,7 +179,7 @@ class SessionStore:
         context = self._create_execution(
             provider,
             model,
-            thinking,
+            options,
             session_id,
             stage_id,
             stage_attempt,
@@ -454,9 +464,7 @@ class SessionStore:
             agent_id=metadata.get("agent_id")
             if isinstance(metadata.get("agent_id"), str)
             else None,
-            thinking=metadata.get("thinking")
-            if isinstance(metadata.get("thinking"), str)
-            else None,
+            options=_string_options(metadata.get("options")),
             status="failed",
         )
         conversation_path = context.conversation_read_path
@@ -652,7 +660,7 @@ class SessionStore:
         self,
         provider: str,
         model: str,
-        thinking: Optional[str],
+        options: Optional[Mapping[str, str]],
         session_id: Optional[str],
         stage_id: str,
         stage_attempt: Optional[int],
@@ -685,7 +693,7 @@ class SessionStore:
                     "stage_attempt": stage_attempt,
                     "provider": provider,
                     "model": model,
-                    "thinking": thinking,
+                    "options": dict(options or {}),
                     "agent_id": None,
                     "resumes_execution_id": resumes_execution_id,
                     "status": "running",

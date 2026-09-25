@@ -274,10 +274,10 @@ def _dispatch_execute_stage(
     runner: Optional[AgentToolRunner],
 ) -> dict[str, Any]:
     target = resolve_stage_target(workspace, workflow_id, stage_id)
-    thinking_label = target.thinking or "default"
+    option_label = ", ".join(f"{key}: {value}" for key, value in target.options.items()) or "default"
     print(
         f"[agentflow] stage {stage_id} · {target.provider}/{target.model} "
-        f"(thinking: {thinking_label}).",
+        f"({option_label}).",
         file=sys.stderr,
         flush=True,
     )

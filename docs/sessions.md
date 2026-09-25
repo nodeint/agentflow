@@ -51,7 +51,7 @@ Each execution directory contains:
 - `execution.json`: execution identity, order, stage and attempt, provider and
   model, lifecycle status, timestamps, and the parsed stage outcome.
 - `conversation.json`: provider conversation checkpoint used when resuming a
-  provider session. It stores the provider and model, native agent ID, thinking
+  provider session. It stores the provider and model, native agent ID, options
   setting, lifecycle status, and fallback message history. This is separate
   from the Agentflow session-level `status.json`.
 - `prompt.md` and `response.md`: the exact prompt sent for the attempt and the

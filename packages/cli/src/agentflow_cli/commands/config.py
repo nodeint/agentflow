@@ -25,7 +25,7 @@ from agentflow_kernel.config_edit import (
     matching_model_name,
     patch_config_text,
     place_role_model,
-    set_role_thinking,
+    set_role_options,
     upsert_model,
 )
 from agentflow_kernel.doctor import diagnose
@@ -35,11 +35,12 @@ from ..display import print_error
 from ..workspace import find_workspace, invocation_cwd
 from .doctor import run_doctor
 from .init import (
-    _accepted_thinking,
+    _accepted_options,
     _detected,
     _known_model,
     _load_catalog,
-    _load_thinking,
+    _load_option_values,
+    _parse_options,
     _require_adapter,
     _run_command,
 )
@@ -123,17 +124,14 @@ def model_command(
         Optional[str],
         typer.Option("--model", help="Model id for this name. Pass with --provider."),
     ] = None,
-    thinking: Annotated[
-        Optional[str],
-        typer.Option(
-            "--thinking",
-            help="options.thinking for this name. Omit it to leave thinking unchanged.",
-        ),
+    option: Annotated[
+        Optional[list[str]],
+        typer.Option("--option", help="KEY=VALUE stored under this model's options."),
     ] = None,
-    clear_thinking: Annotated[
-        bool,
-        typer.Option("--clear-thinking", help="Remove options.thinking from this name."),
-    ] = False,
+    clear_option: Annotated[
+        Optional[list[str]],
+        typer.Option("--clear-option", help="Remove one key from this model's options."),
+    ] = None,
     as_json: Annotated[
         bool,
         typer.Option("--json", help="Print one JSON object."),
@@ -148,7 +146,7 @@ def model_command(
     Exit 1 when the file is written and doctor fails.
     Exit 2 when the arguments are rejected.
     """
-    mutating = provider is not None or model is not None or thinking is not None or clear_thinking
+    mutating = provider is not None or model is not None or option is not None or clear_option is not None
     interactive = sys.stdin.isatty() and not as_json and not mutating
     raise typer.Exit(
         run_config_model(
@@ -156,8 +154,8 @@ def model_command(
             key=key,
             provider=provider,
             model=model,
-            thinking=thinking,
-            clear_thinking=clear_thinking,
+            options=tuple(option or ()),
+            clear_options=tuple(clear_option or ()),
             as_json=as_json,
             interactive=interactive,
         )
@@ -192,14 +190,14 @@ def role_command(
             help="Model id for this role only. Pass with --provider.",
         ),
     ] = None,
-    thinking: Annotated[
-        Optional[str],
-        typer.Option("--thinking", help="roles.<role>.thinking. Pass one role."),
+    option: Annotated[
+        Optional[list[str]],
+        typer.Option("--option", help="KEY=VALUE stored under this role's options. Pass one role."),
     ] = None,
-    clear_thinking: Annotated[
-        bool,
-        typer.Option("--clear-thinking", help="Remove roles.<role>.thinking."),
-    ] = False,
+    clear_option: Annotated[
+        Optional[list[str]],
+        typer.Option("--clear-option", help="Remove one key from this role's options."),
+    ] = None,
     as_json: Annotated[
         bool,
         typer.Option("--json", help="Print one JSON object."),
@@ -210,14 +208,14 @@ def role_command(
     With no role in a terminal, choose a role or add one. --model-name changes
     only those roles' default_model. --provider and --model add or reuse a
     model entry and point one role at it, leaving a shared entry unchanged.
-    --thinking writes roles.<role>.thinking.
+    --option writes roles.<role>.options.
     Exit 0 when the list is shown or the write passes doctor.
     Exit 1 when the file is written and doctor fails.
     Exit 2 when the arguments are rejected.
     """
     mutating = any(
-        value is not None for value in (model_name, provider, model, thinking)
-    ) or clear_thinking
+        value is not None for value in (model_name, provider, model, option, clear_option)
+    )
     interactive = sys.stdin.isatty() and not as_json and not mutating
     raise typer.Exit(
         run_config_role(
@@ -226,8 +224,8 @@ def role_command(
             model_name=model_name,
             provider=provider,
             model=model,
-            thinking=thinking,
-            clear_thinking=clear_thinking,
+            options=tuple(option or ()),
+            clear_options=tuple(clear_option or ()),
             as_json=as_json,
             interactive=interactive,
         )
@@ -246,8 +244,8 @@ def run_config_model(
     key: Optional[str] = None,
     provider: Optional[str] = None,
     model: Optional[str] = None,
-    thinking: Optional[str] = None,
-    clear_thinking: bool = False,
+    options: tuple[str, ...] = (),
+    clear_options: tuple[str, ...] = (),
     as_json: bool = False,
     interactive: bool = False,
     adapters: Optional[Mapping[str, BaseCLIAdapter]] = None,
@@ -261,8 +259,8 @@ def run_config_model(
             key=key,
             provider=provider,
             model=model,
-            thinking=thinking,
-            clear_thinking=clear_thinking,
+            options=options,
+            clear_options=clear_options,
             as_json=as_json,
             interactive=interactive,
             adapters=default_adapters() if adapters is None else adapters,
@@ -282,8 +280,8 @@ def run_config_role(
     model_name: Optional[str] = None,
     provider: Optional[str] = None,
     model: Optional[str] = None,
-    thinking: Optional[str] = None,
-    clear_thinking: bool = False,
+    options: tuple[str, ...] = (),
+    clear_options: tuple[str, ...] = (),
     as_json: bool = False,
     interactive: bool = False,
     adapters: Optional[Mapping[str, BaseCLIAdapter]] = None,
@@ -298,8 +296,8 @@ def run_config_role(
             model_name=model_name,
             provider=provider,
             model=model,
-            thinking=thinking,
-            clear_thinking=clear_thinking,
+            options=options,
+            clear_options=clear_options,
             as_json=as_json,
             interactive=interactive,
             adapters=default_adapters() if adapters is None else adapters,
@@ -318,8 +316,8 @@ def _run_model(
     key: Optional[str],
     provider: Optional[str],
     model: Optional[str],
-    thinking: Optional[str],
-    clear_thinking: bool,
+    options: tuple[str, ...],
+    clear_options: tuple[str, ...],
     as_json: bool,
     interactive: bool,
     adapters: Mapping[str, BaseCLIAdapter],
@@ -327,11 +325,11 @@ def _run_model(
     prompter: ConfigPrompter,
     run_command: Callable[[list[str]], str],
 ) -> int:
-    thinking_value = _thinking_value(thinking, clear_thinking)
+    option_updates = _option_updates(options, clear_options)
     if (provider is None) != (model is None):
         raise ConfigEditError("Pass both --provider and --model, or omit both.")
     config, workflows, view = _loaded(workspace)
-    mutating = provider is not None or thinking_value is not UNSET
+    mutating = provider is not None or option_updates is not UNSET
     if key is None and not mutating:
         if interactive:
             return _interactive_models(
@@ -351,16 +349,16 @@ def _run_model(
     catalog = None
     if provider is not None and model is not None:
         provider, model, catalog = _catalog_model(adapters, which, run_command, provider, model)
-    if thinking_value not in (UNSET, None):
+    if option_updates is not UNSET:
         current_provider = provider or _model_provider(config, key)
         current_model = model or load_model_target(config, key).model
-        thinking_value = _provider_thinking(
+        option_updates = _checked_options(
             adapters,
             which,
             run_command,
             current_provider,
             current_model,
-            str(thinking_value),
+            option_updates,
             catalog if provider is not None else None,
         )
     change = upsert_model(
@@ -368,7 +366,7 @@ def _run_model(
         key,
         provider=provider,
         model=model,
-        thinking=thinking_value,
+        options=option_updates,
         workflows=workflows,
     )
     _validate_change(config, change.config, workflows, adapters)
@@ -382,8 +380,8 @@ def _run_role(
     model_name: Optional[str],
     provider: Optional[str],
     model: Optional[str],
-    thinking: Optional[str],
-    clear_thinking: bool,
+    options: tuple[str, ...],
+    clear_options: tuple[str, ...],
     as_json: bool,
     interactive: bool,
     adapters: Mapping[str, BaseCLIAdapter],
@@ -391,13 +389,13 @@ def _run_role(
     prompter: ConfigPrompter,
     run_command: Callable[[list[str]], str],
 ) -> int:
-    thinking_value = _thinking_value(thinking, clear_thinking)
+    option_updates = _option_updates(options, clear_options)
     if model_name is not None and (provider is not None or model is not None):
         raise ConfigEditError("Pass --model-name or --provider and --model.")
     if (provider is None) != (model is None):
         raise ConfigEditError("Pass both --provider and --model, or omit both.")
     config, workflows, view = _loaded(workspace)
-    mutating = model_name is not None or provider is not None or thinking_value is not UNSET
+    mutating = model_name is not None or provider is not None or option_updates is not UNSET
     if not roles and not mutating:
         if interactive:
             return _interactive_roles(
@@ -407,8 +405,8 @@ def _run_role(
         return 0
     if not roles:
         raise ConfigEditError("Pass a role.")
-    if len(roles) > 1 and (provider is not None or thinking_value is not UNSET):
-        raise ConfigEditError("Pass one role to set thinking or a provider model.")
+    if len(roles) > 1 and (provider is not None or option_updates is not UNSET):
+        raise ConfigEditError("Pass one role to set options or a provider model.")
     if not mutating:
         if interactive and len(roles) == 1:
             _known_role(view, roles[0])
@@ -428,53 +426,45 @@ def _run_role(
         return 0
     if provider is not None and model is not None:
         provider, model, catalog = _catalog_model(adapters, which, run_command, provider, model)
-        if thinking_value not in (UNSET, None):
-            thinking_value = _provider_thinking(
-                adapters,
-                which,
-                run_command,
-                provider,
-                model,
-                str(thinking_value),
-                catalog,
+        if option_updates is not UNSET:
+            option_updates = _checked_options(
+                adapters, which, run_command, provider, model, option_updates, catalog
             )
         change = place_role_model(
             config,
             roles[0],
             provider=provider,
             model=model,
-            thinking=thinking_value,
+            options=option_updates,
             workflows=workflows,
         )
     elif model_name is not None:
         change = assign_roles(config, roles, model_name, workflows=workflows)
-        if thinking_value is not UNSET:
-            if thinking_value is not None:
-                target = load_model_target(change.config, model_name)
-                thinking_value = _provider_thinking(
-                    adapters,
-                    which,
-                    run_command,
-                    target.provider,
-                    target.model,
-                    str(thinking_value),
-                )
-            follow = set_role_thinking(
-                change.config, roles[0], thinking_value, workflows=workflows
-            )
-            change = describe_change(config, follow.config, workflows)
-    else:
-        if thinking_value not in (UNSET, None):
-            target = _role_model(config, roles[0])
-            thinking_value = _provider_thinking(
+        if option_updates is not UNSET:
+            target = load_model_target(change.config, model_name)
+            option_updates = _checked_options(
                 adapters,
                 which,
                 run_command,
                 target.provider,
                 target.model,
-                str(thinking_value),
+                option_updates,
             )
-        change = set_role_thinking(config, roles[0], thinking_value, workflows=workflows)
+            follow = set_role_options(
+                change.config, roles[0], option_updates, workflows=workflows
+            )
+            change = describe_change(config, follow.config, workflows)
+    else:
+        target = _role_model(config, roles[0])
+        option_updates = _checked_options(
+            adapters,
+            which,
+            run_command,
+            target.provider,
+            target.model,
+            option_updates,
+        )
+        change = set_role_options(config, roles[0], option_updates, workflows=workflows)
     _validate_change(config, change.config, workflows, adapters)
     return _commit(workspace, config, change, as_json=as_json, which=which)
 
@@ -524,19 +514,15 @@ def _edit_model(
         current.model if current.model in catalog.ids else catalog.default_id,
     )
     model_id = _known_model(model_id, catalog)
-    thinking_values = _load_thinking(adapter, model_id, catalog, which, run_command)
-    thinking = prompter.select(
-        "Thinking",
-        [("provider default", ""), *((value, value) for value in thinking_values)],
-        current.thinking if current.thinking in thinking_values else "",
+    stored = _prompted_options(
+        prompter, adapter, model_id, catalog, which, run_command, current.options
     )
-    stored = _accepted_thinking(thinking or None, thinking_values, model_id)
     change = upsert_model(
         config,
         key,
         provider=provider,
         model=model_id,
-        thinking=stored,
+        options=stored,
         workflows=workflows,
     )
     _validate_change(config, change.config, workflows, adapters)
@@ -565,14 +551,7 @@ def _add_model(
         catalog.default_id,
     )
     model_id = _known_model(model_id, catalog)
-    thinking_values = _load_thinking(adapter, model_id, catalog, which, run_command)
-    thinking = prompter.select(
-        "Thinking",
-        [("provider default", ""), *((value, value) for value in thinking_values)],
-        "",
-    )
-    stored = _accepted_thinking(thinking or None, thinking_values, model_id)
-    options = {} if stored is None else {"thinking": stored}
+    options = _prompted_options(prompter, adapter, model_id, catalog, which, run_command, {})
     existing = matching_model_name(config, provider=provider, model=model_id, options=options)
     if existing is not None:
         if role is None:
@@ -591,7 +570,7 @@ def _add_model(
             key,
             provider=provider,
             model=model_id,
-            thinking=stored,
+            options=options,
             workflows=workflows,
         )
         if role is None:
@@ -737,9 +716,15 @@ def _validate_change(
             continue
         target = load_model_target(after, model_name)
         options = dict(target.options)
-        role_thinking = body.get("thinking")
-        if isinstance(role_thinking, str) and role_thinking.strip():
-            options["thinking"] = role_thinking.strip()
+        role_options = body.get("options")
+        if isinstance(role_options, dict):
+            options.update(
+                {
+                    str(name): value.strip()
+                    for name, value in role_options.items()
+                    if isinstance(value, str) and value.strip()
+                }
+            )
         _require_adapter(adapters, target.provider).validate_options(options)
     for document in workflows:
         for stage in document.stages.values():
@@ -765,23 +750,69 @@ def _catalog_model(
     return provider, _known_model(model, catalog), catalog
 
 
-def _provider_thinking(
+def _checked_options(
     adapters: Mapping[str, BaseCLIAdapter],
     which: Callable[[str], Optional[str]],
     run_command: Callable[[list[str]], str],
     provider: str,
     model: str,
-    thinking: str,
+    updates: Mapping[str, Optional[str]],
     catalog: Optional[ModelCatalog] = None,
-) -> str:
+) -> dict[str, Optional[str]]:
     adapter = _require_adapter(adapters, provider)
     if catalog is None:
         catalog = _load_catalog(adapter, which, run_command)
-    values = _load_thinking(adapter, model, catalog, which, run_command)
-    accepted = _accepted_thinking(thinking, values, model)
-    if accepted is None:
-        raise ValueError("Thinking is required.")
-    return accepted
+    present = {key: value for key, value in updates.items() if value is not None}
+    if present:
+        _accepted_options(adapter, model, catalog, which, run_command, present)
+    return dict(updates)
+
+
+def _prompted_options(
+    prompter: ConfigPrompter,
+    adapter: BaseCLIAdapter,
+    model: str,
+    catalog: ModelCatalog,
+    which: Callable[[str], Optional[str]],
+    run_command: Callable[[list[str]], str],
+    current: Mapping[str, str],
+) -> dict[str, Optional[str]]:
+    stored: dict[str, Optional[str]] = {}
+    for spec in adapter.provider_options():
+        if not spec.prompt:
+            continue
+        values = _load_option_values(adapter, spec.name, model, catalog, which, run_command)
+        if not values:
+            continue
+        choices = [(value, value) for value in values]
+        if spec.allow_default:
+            choices = [("provider default", ""), *choices]
+        current_value = current.get(spec.name, "")
+        picked = prompter.select(
+            spec.name,
+            choices,
+            current_value if current_value in values else "",
+        )
+        stored[spec.name] = picked or None
+    return stored
+
+
+def _option_updates(
+    options: tuple[str, ...], clear_options: tuple[str, ...]
+) -> object:
+    if not options and not clear_options:
+        return UNSET
+    parsed = _parse_options(options)
+    overlap = set(parsed) & set(clear_options)
+    if overlap:
+        names = ", ".join(sorted(overlap))
+        raise ConfigEditError(f"Pass either --option or --clear-option for {names}.")
+    updates: dict[str, Optional[str]] = dict(parsed)
+    for name in clear_options:
+        if not name.strip():
+            raise ConfigEditError("Option name is required.")
+        updates[name.strip()] = None
+    return updates
 
 
 def _select_provider(
@@ -810,18 +841,6 @@ def _loaded(workspace: Path) -> tuple[dict, tuple[WorkflowDocument, ...], Config
 
 def _documents(workspace: Path) -> tuple[WorkflowDocument, ...]:
     return tuple(load_workflow_catalog(workspace).documents.values())
-
-
-def _thinking_value(thinking: Optional[str], clear_thinking: bool) -> object:
-    if thinking is not None and clear_thinking:
-        raise ConfigEditError("Pass either --thinking or --clear-thinking.")
-    if clear_thinking:
-        return None
-    if thinking is None:
-        return UNSET
-    if not thinking.strip():
-        raise ConfigEditError("Thinking is required.")
-    return thinking.strip()
 
 
 def _model_provider(config: Mapping[str, Any], key: str) -> str:
@@ -919,7 +938,6 @@ def _model_json(model: ModelView) -> dict[str, object]:
         "key": model.key,
         "provider": model.provider,
         "model": model.model,
-        "thinking": model.thinking,
         "options": dict(model.options),
         "roles": list(model.roles),
         "stages": [
@@ -934,15 +952,14 @@ def _role_json(role: RoleView) -> dict[str, object]:
         "model_name": role.model_name,
         "provider": role.provider,
         "model": role.model,
-        "thinking": role.thinking,
-        "thinking_from": role.thinking_from,
+        "options": dict(role.options),
         "shared_with": list(role.shared_with),
         "stages": [
             {
                 "workflow": stage.workflow,
                 "stage": stage.stage,
                 "model_name": stage.model_name,
-                "thinking": stage.thinking,
+                "options": dict(stage.options),
             }
             for stage in role.stages
         ],

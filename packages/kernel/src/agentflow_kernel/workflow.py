@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, NoReturn, Optional
@@ -17,7 +18,7 @@ class StageSpec:
     resume_from: Optional[str] = None
     instructions: tuple[str, ...] = ()
     model_name: Optional[str] = None
-    thinking: Optional[str] = None
+    options: tuple[tuple[str, str], ...] = ()
     max_revisions: Optional[int] = None
     routes: dict[str, str] = field(default_factory=dict)
 
@@ -217,7 +218,7 @@ def _parse_stages(raw: Any) -> dict[str, StageSpec]:
                 item.get("instructions"), f"stages.{stage_id}.instructions"
             ),
             model_name=_optional_stage_string(item, "model", stage_id),
-            thinking=_optional_stage_string(item, "thinking", stage_id),
+            options=_stage_options(item, stage_id),
             max_revisions=_stage_max_revisions(item, stage_id),
             routes={},
         )
@@ -430,6 +431,26 @@ def _stage_max_revisions(stage: dict[str, Any], stage_id: str) -> Optional[int]:
     if isinstance(raw, str) and raw.strip().isdigit():
         return int(raw.strip())
     raise ValueError(f"{field} must be a non-negative integer.")
+
+
+_OPTION_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_.-]*")
+
+
+def _stage_options(stage: dict[str, Any], stage_id: str) -> tuple[tuple[str, str], ...]:
+    raw = stage.get("options")
+    if raw is None:
+        return ()
+    if not isinstance(raw, dict):
+        raise ValueError(f"Missing or invalid stages.{stage_id}.options.")
+    parsed: list[tuple[str, str]] = []
+    for key, item in raw.items():
+        field = f"stages.{stage_id}.options"
+        if not isinstance(key, str) or _OPTION_KEY.fullmatch(key) is None:
+            raise ValueError(f"Missing or invalid {field} key.")
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"Missing or invalid {field}.{key}.")
+        parsed.append((key, item.strip()))
+    return tuple(parsed)
 
 
 def _optional_stage_string(stage: dict[str, Any], key: str, stage_id: str) -> Optional[str]:

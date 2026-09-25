@@ -32,7 +32,7 @@ class StageRef:
     workflow: str
     stage: str
     model_name: Optional[str] = None
-    thinking: Optional[str] = None
+    options: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,6 @@ class ModelView:
     key: str
     provider: str
     model: str
-    thinking: Optional[str]
     options: Mapping[str, str]
     roles: tuple[str, ...]
     stages: tuple[StageRef, ...]
@@ -52,8 +51,7 @@ class RoleView:
     model_name: str
     provider: str
     model: str
-    thinking: Optional[str]
-    thinking_from: str
+    options: Mapping[str, str]
     shared_with: tuple[str, ...]
     stages: tuple[StageRef, ...]
 
@@ -113,7 +111,6 @@ def inspect_config(
                 key=key,
                 provider=target.provider,
                 model=target.model,
-                thinking=target.thinking,
                 options=dict(target.options),
                 roles=used_by,
                 stages=tuple(_stages_using(workflows, roles, key)),
@@ -123,11 +120,6 @@ def inspect_config(
     for name, role in roles.items():
         model_name = _string(role.get("default_model"), f"roles.{name}.default_model")
         target = load_model_target(config, model_name)
-        thinking_from = "model" if target.thinking else "provider"
-        resolved_thinking = target.thinking
-        if isinstance(role.get("thinking"), str) and role.get("thinking").strip():
-            thinking_from = "role"
-            resolved_thinking = str(role["thinking"]).strip()
         shared = tuple(
             other
             for other, other_role in roles.items()
@@ -139,8 +131,7 @@ def inspect_config(
                 model_name=model_name,
                 provider=target.provider,
                 model=target.model,
-                thinking=resolved_thinking,
-                thinking_from=thinking_from,
+                options=_role_option_map(role),
                 shared_with=shared,
                 stages=tuple(_role_stages(workflows, name)),
             )
@@ -154,10 +145,13 @@ def upsert_model(
     *,
     provider: Optional[str] = None,
     model: Optional[str] = None,
-    thinking: Any = UNSET,
+    options: Any = UNSET,
     workflows: Sequence[WorkflowDocument] = (),
 ) -> ConfigChange:
-    """Create a model name or update the fields that were passed."""
+    """Create a model name or update the fields that were passed.
+
+    `options` maps option names to a new value, or to None to remove that option.
+    """
     if (provider is None) != (model is None):
         raise ConfigEditError("Pass both --provider and --model, or omit both.")
     updated = _copy(config)
@@ -177,8 +171,8 @@ def upsert_model(
     if provider is not None and model is not None:
         body["provider"] = _plain(provider, "--provider")
         body["model"] = _plain(model, "--model")
-    if thinking is not UNSET:
-        _set_option_thinking(body, key, thinking)
+    if options is not UNSET:
+        _apply_model_options(body, key, options)
     return describe_change(config, updated, workflows)
 
 
@@ -208,20 +202,20 @@ def assign_roles(
     return describe_change(config, updated, workflows)
 
 
-def set_role_thinking(
+def set_role_options(
     config: Mapping[str, Any],
     role: str,
-    thinking: Optional[str],
+    options: Mapping[str, Optional[str]],
     *,
     workflows: Sequence[WorkflowDocument] = (),
 ) -> ConfigChange:
-    """Set or clear `roles.<role>.thinking`."""
+    """Set or clear keys under `roles.<role>.options`."""
     _require_name(role, "role")
     updated = _copy(config)
     role_map = _roles(updated)
     if role not in role_map or not isinstance(role_map[role], dict):
         raise ConfigEditError(f"Unknown role: {role}.")
-    _set_role_thinking(role_map[role], thinking)
+    _apply_role_options(role_map[role], role, options)
     return describe_change(config, updated, workflows)
 
 
@@ -231,14 +225,13 @@ def place_role_model(
     *,
     provider: str,
     model: str,
-    thinking: Any = UNSET,
+    options: Any = UNSET,
     workflows: Sequence[WorkflowDocument] = (),
 ) -> ConfigChange:
     """Point one role at a provider model without changing a shared entry.
 
     An existing entry is reused when its provider, model id, and options are
-    all empty of extra options. Otherwise a new key is added. `thinking` is
-    stored on the role, not on the model.
+    all empty. Otherwise a new key is added. `options` are stored on the role.
     """
     _require_name(role, "role")
     provider_name = _plain(provider, "--provider")
@@ -264,8 +257,8 @@ def place_role_model(
         if not isinstance(body, dict):
             raise ConfigurationError(f"Missing or invalid roles.{role}.")
         body["default_model"] = match
-    if thinking is not UNSET:
-        _set_role_thinking(role_map[role], thinking)
+    if options is not UNSET:
+        _apply_role_options(role_map[role], role, options)
     change = describe_change(config, updated, workflows, reused_model=reused)
     if created is not None:
         return ConfigChange(
@@ -431,7 +424,7 @@ def _sync_models(
             raise ConfigEditError(f"Cannot edit models.{key} in this file.")
         _sync_scalar(lines, block, "provider", body.get("provider"), f"models.{key}.provider", edits)
         _sync_scalar(lines, block, "model", body.get("model"), f"models.{key}.model", edits)
-        _sync_thinking_option(lines, block, current_models[key], body, str(key), unit, edits)
+        _sync_options(lines, block, current_models[key], body, str(key), unit, edits)
     if fresh:
         if section is None:
             edits.append((0, 0, ["models:", *fresh]))
@@ -470,7 +463,7 @@ def _sync_roles(
             f"roles.{key}.default_model",
             edits,
         )
-        _sync_role_thinking(lines, block, body, unit, edits)
+        _sync_role_options(lines, block, current_roles[key], body, str(key), unit, edits)
     if not fresh:
         return
     if section is None:
@@ -498,80 +491,86 @@ def _sync_scalar(
     edits.append((child.line, child.line + 1, [_with_value(lines[child.line], value)]))
 
 
-def _sync_thinking_option(
+def _sync_options(
     lines: list[str],
-    model_block: _Block,
+    parent: _Block,
     before_body: Any,
     after_body: Mapping[str, Any],
     key: str,
     unit: int,
     edits: list[tuple[int, int, list[str]]],
 ) -> None:
-    before = _options_dict(before_body, key)
-    after = _options_dict(after_body, key)
-    if before.get("thinking") == after.get("thinking"):
-        return
-    options = _child(model_block, "options")
-    if options is not None and options.value.strip():
-        raise ConfigEditError(f"Cannot edit models.{key}.options in this file.")
-    after_thinking = after.get("thinking")
-    if after_thinking is None:
-        if options is None:
-            return
-        thinking = _child(options, "thinking")
-        if thinking is None:
-            return
-        other = [child for child in options.children if child.key != "thinking"]
-        if other:
-            edits.append((thinking.line, thinking.end, []))
-        else:
-            edits.append((options.line, thinking.end, []))
-        return
-    if not isinstance(after_thinking, str):
-        raise ConfigurationError(f"Missing or invalid models.{key}.options.thinking.")
-    if options is None:
-        indent = " " * (model_block.indent + unit)
-        nested = " " * (model_block.indent + unit * 2)
-        edits.append(
-            (
-                model_block.end,
-                model_block.end,
-                [f"{indent}options:", f"{nested}thinking: {_yaml_scalar(after_thinking)}"],
-            )
-        )
-        return
-    thinking = _child(options, "thinking")
-    if thinking is None:
-        nested = " " * (options.indent + unit)
-        edits.append(
-            (options.end, options.end, [f"{nested}thinking: {_yaml_scalar(after_thinking)}"])
-        )
-        return
-    edits.append((thinking.line, thinking.line + 1, [_with_value(lines[thinking.line], after_thinking)]))
+    _sync_option_map(
+        lines,
+        parent,
+        _options_dict(before_body, key),
+        _options_dict(after_body, key),
+        f"models.{key}.options",
+        unit,
+        edits,
+    )
 
 
-def _sync_role_thinking(
+def _sync_role_options(
     lines: list[str],
     role_block: _Block,
-    body: Mapping[str, Any],
+    before_body: Any,
+    after_body: Mapping[str, Any],
+    key: str,
     unit: int,
     edits: list[tuple[int, int, list[str]]],
 ) -> None:
-    child = _child(role_block, "thinking")
-    value = body.get("thinking")
-    if value is None:
+    _sync_option_map(
+        lines,
+        role_block,
+        _role_option_map(before_body if isinstance(before_body, dict) else {}),
+        _role_option_map(after_body),
+        f"roles.{key}.options",
+        unit,
+        edits,
+    )
+
+
+def _sync_option_map(
+    lines: list[str],
+    parent: _Block,
+    before: Mapping[str, str],
+    after: Mapping[str, str],
+    field: str,
+    unit: int,
+    edits: list[tuple[int, int, list[str]]],
+) -> None:
+    if dict(before) == dict(after):
+        return
+    options = _child(parent, "options")
+    if options is not None and options.value.strip():
+        raise ConfigEditError(f"Cannot edit {field} in this file.")
+    if not after:
+        if options is not None:
+            edits.append((options.line, options.end, []))
+        return
+    nested = " " * ((options.indent if options is not None else parent.indent + unit) + (0 if options is not None else unit))
+    if options is None:
+        indent = " " * (parent.indent + unit)
+        nested = " " * (parent.indent + unit * 2)
+        body = [f"{indent}options:"]
+        for name in sorted(after):
+            body.append(f"{nested}{name}: {_yaml_scalar(after[name])}")
+        edits.append((parent.end, parent.end, body))
+        return
+    for name in sorted(set(before) - set(after)):
+        child = _child(options, name)
         if child is not None:
             edits.append((child.line, child.end, []))
-        return
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigurationError("Missing or invalid thinking.")
-    if child is None:
-        indent = " " * (role_block.indent + unit)
-        edits.append((role_block.end, role_block.end, [f"{indent}thinking: {_yaml_scalar(value)}"]))
-        return
-    current = _scalar(child.value)
-    if current != value:
-        edits.append((child.line, child.line + 1, [_with_value(lines[child.line], value)]))
+    for name in sorted(after):
+        child = _child(options, name)
+        rendered = f"{' ' * (options.indent + unit)}{name}: {_yaml_scalar(after[name])}"
+        if child is None:
+            edits.append((options.end, options.end, [rendered]))
+            continue
+        current = _scalar(child.value)
+        if current != after[name]:
+            edits.append((child.line, child.line + 1, [_with_value(lines[child.line], after[name])]))
 
 
 def _model_lines(key: str, body: Mapping[str, Any], indent: int, unit: int) -> list[str]:
@@ -598,9 +597,12 @@ def _role_lines(key: str, body: Mapping[str, Any], indent: int, unit: int) -> li
         f"{parent}{key}:",
         f"{child}default_model: {_yaml_scalar(_string(body.get('default_model'), f'roles.{key}.default_model'))}",
     ]
-    thinking = body.get("thinking")
-    if isinstance(thinking, str) and thinking.strip():
-        lines.append(f"{child}thinking: {_yaml_scalar(thinking.strip())}")
+    role_options = _role_option_map(body)
+    if role_options:
+        lines.append(f"{child}options:")
+        nested = " " * (indent + unit * 2)
+        for name, value in role_options.items():
+            lines.append(f"{nested}{name}: {_yaml_scalar(value)}")
     return lines
 
 
@@ -744,7 +746,7 @@ def _role_stages(workflows: Sequence[WorkflowDocument], role: str) -> list[Stage
                     workflow=document.id,
                     stage=stage.id,
                     model_name=stage.model_name,
-                    thinking=stage.thinking,
+                    options=stage.options,
                 )
             )
     return found
@@ -763,15 +765,15 @@ def _shields(
     ignores: list[str] = []
     if stage.model_name is not None and before_binding[0] != after_binding[0]:
         ignores.append("role-model")
-    if stage.thinking is not None and (
+    if stage.options and (
         before_binding[1] != after_binding[1]
-        or _model_thinking_changed(stage, after_binding, before_models, after_models, updated_models)
+        or _model_options_changed(stage, after_binding, before_models, after_models, updated_models)
     ):
-        ignores.append("role-thinking")
+        ignores.append("role-options")
     return ignores
 
 
-def _model_thinking_changed(
+def _model_options_changed(
     stage: Any,
     after_binding: tuple[Any, Any],
     before_models: Mapping[str, Any],
@@ -781,9 +783,9 @@ def _model_thinking_changed(
     key = stage.model_name or after_binding[0]
     if not isinstance(key, str) or key not in updated_models:
         return False
-    before_thinking = _options_dict(before_models.get(key), key).get("thinking")
-    after_thinking = _options_dict(after_models.get(key), key).get("thinking")
-    return before_thinking != after_thinking
+    before_options = _options_dict(before_models.get(key), key)
+    after_options = _options_dict(after_models.get(key), key)
+    return before_options != after_options
 
 
 def _orphans(
@@ -810,7 +812,7 @@ def _references(
     return found
 
 
-def _resolved_role(config: Mapping[str, Any], role: str) -> Optional[tuple[str, str, Optional[str]]]:
+def _resolved_role(config: Mapping[str, Any], role: str) -> Optional[tuple[str, str, tuple[tuple[str, str], ...]]]:
     roles = config.get("roles")
     if not isinstance(roles, dict) or role not in roles:
         return None
@@ -821,30 +823,25 @@ def _resolved_role(config: Mapping[str, Any], role: str) -> Optional[tuple[str, 
         ))
     except ConfigurationError:
         return None
-    thinking = target.thinking
     body = roles[role]
-    if isinstance(body, dict) and isinstance(body.get("thinking"), str) and body["thinking"].strip():
-        thinking = body["thinking"].strip()
-    return target.provider, target.model, thinking
+    merged = dict(target.options)
+    if isinstance(body, dict):
+        merged.update(_role_option_map(body))
+    return target.provider, target.model, tuple(sorted(merged.items()))
 
 
-def _resolved_stage(config: Mapping[str, Any], stage: Any) -> Optional[tuple[str, str, Optional[str]]]:
+def _resolved_stage(config: Mapping[str, Any], stage: Any) -> Optional[tuple[str, str, tuple[tuple[str, str], ...]]]:
     try:
         target = resolve_stage_spec(config, stage)
     except ConfigurationError:
         return None
-    return target.provider, target.model, target.thinking
+    return target.provider, target.model, tuple(sorted(target.options.items()))
 
 
-def _binding(role: Any) -> tuple[Any, Any]:
+def _binding(role: Any) -> tuple[Any, tuple[tuple[str, str], ...]]:
     if not isinstance(role, dict):
-        return (None, None)
-    thinking = role.get("thinking")
-    if not isinstance(thinking, str) or not thinking.strip():
-        thinking = None
-    else:
-        thinking = thinking.strip()
-    return role.get("default_model"), thinking
+        return (None, ())
+    return role.get("default_model"), tuple(sorted(_role_option_map(role).items()))
 
 
 def _signature(body: Any) -> tuple[Any, ...]:
@@ -855,50 +852,71 @@ def _signature(body: Any) -> tuple[Any, ...]:
         rendered = tuple(sorted((str(key), str(value)) for key, value in options.items()))
     else:
         rendered = ()
-    return (body.get("provider"), body.get("model"), rendered, body.get("thinking"))
+    return (body.get("provider"), body.get("model"), rendered)
 
 
-def _set_option_thinking(body: dict[str, Any], key: str, thinking: Any) -> None:
-    if "thinking" in body:
-        raise ConfigurationError(
-            f"models.{key}.thinking is not supported. "
-            f"Put CLI parameters under models.{key}.options."
-        )
+def _apply_model_options(body: dict[str, Any], key: str, updates: Any) -> None:
+    if not isinstance(updates, Mapping):
+        raise ConfigEditError("Options must be a mapping.")
     options = body.get("options")
     if options is None:
         options = {}
     elif not isinstance(options, dict):
         raise ConfigurationError(f"Missing or invalid models.{key}.options.")
-    if thinking is None:
-        options.pop("thinking", None)
-        if options:
-            body["options"] = options
-        else:
-            body.pop("options", None)
-        return
-    if not isinstance(thinking, str) or not thinking.strip():
-        raise ConfigEditError("Thinking is required.")
-    options["thinking"] = thinking.strip()
-    body["options"] = options
+    for name, value in updates.items():
+        if not isinstance(name, str) or not name.strip():
+            raise ConfigEditError("Option name is required.")
+        if value is None:
+            options.pop(name, None)
+            continue
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigEditError(f"{name} is required.")
+        options[name] = value.strip()
+    if options:
+        body["options"] = options
+    else:
+        body.pop("options", None)
 
 
-def _set_role_thinking(role: dict[str, Any], thinking: Optional[str]) -> None:
-    if thinking is None:
-        role.pop("thinking", None)
-        return
-    if not isinstance(thinking, str) or not thinking.strip():
-        raise ConfigEditError("Thinking is required.")
-    role["thinking"] = thinking.strip()
+def _apply_role_options(role: dict[str, Any], name: str, updates: Any) -> None:
+    if not isinstance(updates, Mapping):
+        raise ConfigEditError("Options must be a mapping.")
+    options = role.get("options")
+    if options is None:
+        options = {}
+    elif not isinstance(options, dict):
+        raise ConfigurationError(f"Missing or invalid roles.{name}.options.")
+    for key, value in updates.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ConfigEditError("Option name is required.")
+        if value is None:
+            options.pop(key, None)
+            continue
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigEditError(f"{key} is required.")
+        options[key] = value.strip()
+    if options:
+        role["options"] = options
+    else:
+        role.pop("options", None)
+
+
+def _role_option_map(role: Mapping[str, Any]) -> dict[str, str]:
+    options = role.get("options")
+    if options is None:
+        return {}
+    if not isinstance(options, dict):
+        raise ConfigurationError("Missing or invalid roles.<role>.options.")
+    return {
+        str(key): value.strip()
+        for key, value in options.items()
+        if isinstance(value, str) and value.strip()
+    }
 
 
 def _options_dict(body: Any, key: str) -> dict[str, str]:
     if not isinstance(body, dict):
         return {}
-    if "thinking" in body:
-        raise ConfigurationError(
-            f"models.{key}.thinking is not supported. "
-            f"Put CLI parameters under models.{key}.options."
-        )
     options = body.get("options")
     if options is None:
         return {}

@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
-from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec, ModelCatalog
+from agentflow_kernel.base_adapter import BaseCLIAdapter, CommandSpec, ModelCatalog, ProviderOption
 from agentflow_kernel.provider_events import classify_provider_error, provider_error_message
 
 
@@ -78,32 +78,39 @@ class GrokAdapter(BaseCLIAdapter):
             default_id = None
         return ModelCatalog(tuple(ids), default_id)
 
-    def thinking_command(self, model: str) -> list[str]:
+    def provider_options(self) -> tuple[ProviderOption, ...]:
+        return _GROK_OPTIONS
+
+    def option_values_command(self, name: str, model: str) -> list[str] | None:
+        if name != "reasoning-effort":
+            return None
         return [
             self.command,
             "-m",
             model,
             "--reasoning-effort",
-            _GROK_THINKING_PROBE,
+            _GROK_EFFORT_PROBE,
             "-p",
             "x",
             "--output-format",
             "plain",
         ]
 
-    def parse_thinking_values(self, text: str, *, model: str) -> tuple[str, ...]:
+    def parse_option_values(self, name: str, text: str, *, model: str) -> tuple[str, ...]:
         del model
+        if name != "reasoning-effort":
+            raise ValueError(f"grok does not list values for {name}.")
         match = _GROK_EFFORTS.search(text)
         if match is None:
             detail = " ".join(text.split())
-            raise ValueError(detail or "grok did not list thinking values.")
+            raise ValueError(detail or "grok did not list reasoning-effort values.")
         values: list[str] = []
         for part in match.group(1).split(","):
             value = part.strip().strip(".")
             if value and value not in values:
                 values.append(value)
         if not values:
-            raise ValueError("grok did not list thinking values.")
+            raise ValueError("grok did not list reasoning-effort values.")
         return tuple(values)
 
     def validate_options(self, options: Mapping[str, str]) -> None:
@@ -195,8 +202,19 @@ class GrokAdapter(BaseCLIAdapter):
         return {}
 
 
-_GROK_THINKING_PROBE = "agentflow-probe"
+_GROK_EFFORT_PROBE = "agentflow-probe"
 _GROK_EFFORTS = re.compile(r"use one of: ([^\n]+)")
+_GROK_OPTIONS = (
+    ProviderOption("reasoning-effort", prompt=True, allow_default=True, overridable=True),
+    ProviderOption("max_turns"),
+    ProviderOption("tools"),
+    ProviderOption("disallowed_tools"),
+    ProviderOption("permission_mode"),
+    ProviderOption("rules"),
+    ProviderOption("allow"),
+    ProviderOption("deny"),
+    ProviderOption("sandbox"),
+)
 _GROK_PERMISSION_MODES = (
     "default",
     "acceptEdits",
@@ -226,7 +244,7 @@ def _grok_text(value: str) -> None:
 
 
 _GROK_OPTION_CHECKS = {
-    "thinking": _grok_text,
+    "reasoning-effort": _grok_text,
     "max_turns": _grok_max_turns,
     "tools": _grok_text,
     "disallowed_tools": _grok_text,
@@ -245,7 +263,7 @@ def _append_options(cmd: list[str], options: Optional[Mapping[str, str]]) -> Non
 
 
 # Semantic option names that do not match the grok long flag.
-_GROK_FLAGS = {"thinking": "reasoning-effort"}
+_GROK_FLAGS: dict[str, str] = {}
 
 
 def _text_with_status_header(segments: list[list[str]]) -> str:

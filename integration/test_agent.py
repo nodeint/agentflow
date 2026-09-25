@@ -147,7 +147,7 @@ class AgentTests(unittest.TestCase):
             self.assertTrue(has_args(second, "resume", CODEX_THREAD, "-"))
             self.assertNotIn("--approve-for-me", second)
 
-    def test_a_different_thinking_level_does_not_resume(self) -> None:
+    def test_a_different_option_does_not_resume(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             write_workspace(workspace, GROK_CONFIG, {})
@@ -173,15 +173,15 @@ class AgentTests(unittest.TestCase):
                     objects[0]["session_id"],
                     "--role",
                     "planner",
-                    "--thinking",
-                    "high",
+                    "--option",
+                    "reasoning-effort=high",
                     "--prompt",
                     "again",
                     "--json",
                 ],
             )
             self.assertEqual(code, 2, stderr)
-            self.assertIn("thinking", stderr)
+            self.assertIn("options", stderr)
             self.assertEqual(len(provider_invocations(workspace)), 1)
 
 

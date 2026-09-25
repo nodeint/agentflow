@@ -232,7 +232,7 @@ stages:
             with self.assertRaisesRegex(ConfigurationError, "other.yaml: id is renamed"):
                 load_named_workflow(workspace, "other")
 
-    def test_rejects_empty_stage_model_and_thinking(self) -> None:
+    def test_rejects_an_empty_stage_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "flow.yaml"
             path.write_text(
@@ -240,12 +240,6 @@ stages:
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, r"Missing or invalid stages\.a\.model\."):
-                load_workflow_document(path)
-            path.write_text(
-                'id: broken\nstages:\n  - id: a\n    role: r\n    thinking: ""\n',
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(ValueError, r"Missing or invalid stages\.a\.thinking\."):
                 load_workflow_document(path)
 
 

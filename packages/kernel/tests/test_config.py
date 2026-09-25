@@ -36,19 +36,27 @@ class StageTargetTests(unittest.TestCase):
             "implement",
             provider="codex",
             model="gpt-5.6-terra",
-            thinking="medium",
+            options={"model_reasoning_effort": "medium"},
         )
         self.assertEqual(
-            (role_default.provider, role_default.model, role_default.thinking),
+            (role_default.provider, role_default.model, role_default.options["reasoning-effort"]),
             ("grok", "grok-4.6", "high"),
         )
         self.assertEqual(
-            (stage_override.provider, stage_override.model, stage_override.thinking),
+            (
+                stage_override.provider,
+                stage_override.model,
+                stage_override.options["model_reasoning_effort"],
+            ),
             ("codex", "gpt-5.6-terra", "high"),
         )
         self.assertEqual(stage_override.options["temperature"], "0.2")
         self.assertEqual(
-            (cli_override.provider, cli_override.model, cli_override.thinking),
+            (
+                cli_override.provider,
+                cli_override.model,
+                cli_override.options["model_reasoning_effort"],
+            ),
             ("codex", "gpt-5.6-terra", "medium"),
         )
 
@@ -72,61 +80,63 @@ class StageTargetTests(unittest.TestCase):
             "missing-stage",
             provider="codex",
             model="gpt-5.6-terra",
-            thinking="medium",
+            options={"model_reasoning_effort": "medium"},
         )
         self.assertEqual(
-            (target.provider, target.model, target.thinking),
+            (target.provider, target.model, target.options["model_reasoning_effort"]),
             ("codex", "gpt-5.6-terra", "medium"),
         )
 
-    def test_stage_thinking_overrides_model_options(self) -> None:
+    def test_stage_option_overrides_model_options(self) -> None:
         workspace = write_stage_workspace()
         workflow = workspace / ".agentflow" / "workflows" / "plan-implement.yaml"
         workflow.write_text(
-            workflow.read_text(encoding="utf-8").replace("thinking: high", "thinking: low"),
+            workflow.read_text(encoding="utf-8").replace(
+                "model_reasoning_effort: high", "model_reasoning_effort: low"
+            ),
             encoding="utf-8",
         )
         target = resolve_stage_target(workspace, "plan-implement", "review-work")
-        self.assertEqual(target.thinking, "low")
+        self.assertEqual(target.options["model_reasoning_effort"], "low")
         self.assertEqual(target.options["temperature"], "0.2")
 
-    def test_rejects_the_old_model_thinking_block(self) -> None:
+    def test_ignores_a_stray_model_field(self) -> None:
         workspace = write_stage_workspace()
         config = workspace / ".agentflow" / "config.yaml"
         config.write_text(
             config.read_text(encoding="utf-8").replace(
-                "    options:\n      thinking: high\n",
-                "    thinking:\n      allowed: [high]\n      default: high\n",
+                "    options:\n      reasoning-effort: high\n",
+                "    note: hello\n",
             ),
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(
-            ConfigurationError,
-            r"models\.grok\.thinking is not supported",
-        ):
-            resolve_stage_target(workspace, "plan-implement", "implement")
+        target = resolve_stage_target(workspace, "plan-implement", "implement")
+        self.assertEqual(target.model, "grok-4.6")
+        self.assertEqual(dict(target.options), {})
 
 
 class YamlSubsetConfigTests(unittest.TestCase):
-    def test_preserves_model_options_and_role_thinking(self) -> None:
+    def test_preserves_model_options_and_role_options(self) -> None:
         parsed = load_yaml_mapping(write_config(STAGE_CONFIG))
         self.assertEqual(
             parsed["models"]["gpt-terra"]["options"],
-            {"thinking": "medium", "temperature": "0.2"},
+            {"model_reasoning_effort": "medium", "temperature": "0.2"},
         )
-        self.assertEqual(parsed["roles"]["reviewer"]["thinking"], "medium")
+        self.assertEqual(
+            parsed["roles"]["reviewer"]["options"]["model_reasoning_effort"], "medium"
+        )
 
     def test_rejects_a_non_scalar_model_option(self) -> None:
         workspace = write_role_workspace()
         config = workspace / ".agentflow" / "config.yaml"
         config.write_text(
             "models:\n  grok:\n    provider: grok\n    model: grok-4\n"
-            "    options:\n      thinking:\n        default: high\n"
+            "    options:\n      reasoning-effort:\n        default: high\n"
             "roles:\n  developer:\n    default_model: grok\n",
             encoding="utf-8",
         )
         with self.assertRaisesRegex(
-            ConfigurationError, r"Missing or invalid models\.grok\.options\.thinking\."
+            ConfigurationError, r"Missing or invalid models\.grok\.options\.reasoning-effort\."
         ):
             resolve_role_target(workspace, "developer")
 
@@ -155,11 +165,11 @@ class RoleTargetTests(unittest.TestCase):
             "developer",
             provider="codex",
             model="gpt-5.6-terra",
-            thinking="low",
+            options={"model_reasoning_effort": "low"},
         )
         self.assertEqual(target.provider, "codex")
         self.assertEqual(target.model, "gpt-5.6-terra")
-        self.assertEqual(target.thinking, "low")
+        self.assertEqual(target.options["model_reasoning_effort"], "low")
         with self.assertRaisesRegex(ConfigurationError, "both --provider and --model"):
             resolve_role_target(workspace, "developer", provider="grok")
 

@@ -66,13 +66,13 @@ class _ScriptedPrompt:
             raise ValueError(f"Unknown model: {raw}.")
         return raw
 
-    def select_thinking(self, values: tuple[str, ...], message: str) -> str:
-        del message
+    def select_option(self, name: str, values: tuple[str, ...], *, allow_default: bool) -> str:
+        del name, allow_default
         raw = next(self._answers)
         if raw == "":
             return ""
         if raw not in values:
-            raise ValueError(f"Unknown thinking value: {raw}.")
+            raise ValueError(f"Unknown option value: {raw}.")
         return raw
 
     def confirm(self, message: str) -> bool:
@@ -110,7 +110,6 @@ class InitCommandTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("provider: codex", config)
             self.assertIn("model: gpt-5", config)
-            self.assertNotIn("thinking", config)
             self.assertNotIn("options", config)
             self.assertIn("default_model: default", config)
             self.assertNotIn("grok", config)
@@ -209,10 +208,10 @@ class InitCommandTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("provider: codex", config)
             self.assertIn("model: gpt-5", config)
-            self.assertNotIn("thinking: medium", config)
+            self.assertNotIn("model_reasoning_effort:", config)
             self.assertIn("provider: grok", config)
             self.assertIn("model: grok-4.7", config)
-            self.assertIn("thinking: high", config)
+            self.assertIn("reasoning-effort: high", config)
             self.assertIn("default_model: review", config)
 
     def test_interactive_prefers_an_installed_provider(self) -> None:
@@ -231,20 +230,20 @@ class InitCommandTests(unittest.TestCase):
             self.assertIn("model: grok-4.7", config)
             self.assertNotIn("codex", config)
 
-    def test_writes_thinking_only_when_it_is_passed(self) -> None:
+    def test_writes_an_option_only_when_it_is_passed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             code = run_init(
                 workspace,
                 provider="codex",
                 model="gpt-5",
-                thinking="high",
+                options=("model_reasoning_effort=high",),
                 run_command=_run_command,
                 which=_which({"codex"}),
             )
             config = (workspace / ".agentflow" / "config.yaml").read_text(encoding="utf-8")
             self.assertEqual(code, 0)
-            self.assertIn("thinking: high", config)
+            self.assertIn("model_reasoning_effort: high", config)
 
     def test_rejects_a_model_the_provider_cli_did_not_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -262,7 +261,7 @@ class InitCommandTests(unittest.TestCase):
             self.assertFalse((workspace / ".agentflow").exists())
             self.assertIn("Unknown model: hidden", stderr.getvalue())
 
-    def test_rejects_a_thinking_value_the_adapter_does_not_accept(self) -> None:
+    def test_rejects_an_option_value_the_provider_does_not_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             stderr = io.StringIO()
@@ -271,13 +270,13 @@ class InitCommandTests(unittest.TestCase):
                     workspace,
                     provider="codex",
                     model="gpt-5",
-                    thinking="max",
+                    options=("model_reasoning_effort=max",),
                     run_command=_run_command,
                     which=_which({"codex"}),
                 )
             self.assertEqual(code, 2)
             self.assertFalse((workspace / ".agentflow").exists())
-            self.assertIn("thinking must be one of", stderr.getvalue())
+            self.assertIn("model_reasoning_effort must be one of", stderr.getvalue())
 
     def test_requires_provider_and_model_when_not_interactive(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
