@@ -16,7 +16,7 @@ class StageSpec:
     depends_on: tuple[str, ...] = ()
     resume_from: Optional[str] = None
     instructions: tuple[str, ...] = ()
-    model_key: Optional[str] = None
+    model_name: Optional[str] = None
     thinking: Optional[str] = None
     max_revisions: Optional[int] = None
     routes: dict[str, str] = field(default_factory=dict)
@@ -216,7 +216,7 @@ def _parse_stages(raw: Any) -> dict[str, StageSpec]:
             instructions=_string_items(
                 item.get("instructions"), f"stages.{stage_id}.instructions"
             ),
-            model_key=_optional_stage_string(item, "model", stage_id),
+            model_name=_optional_stage_string(item, "model", stage_id),
             thinking=_optional_stage_string(item, "thinking", stage_id),
             max_revisions=_stage_max_revisions(item, stage_id),
             routes={},

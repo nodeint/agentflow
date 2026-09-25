@@ -15,6 +15,7 @@ Use Agentflow as the control plane for the project's multi-stage agent workflows
 - Read `.agentflow/config.yaml` and the relevant file under
   `.agentflow/workflows/` before changing or running a workflow.
 - Run `agentflow doctor` after editing configuration or workflows.
+  `agentflow config model` and `agentflow config role` run it after a write.
 - Treat `.agentflow/sessions/` as generated, resumable state. Do not edit its
   files directly.
 - Preserve the user's task wording when passing `--task`.
@@ -33,6 +34,13 @@ Use Agentflow as the control plane for the project's multi-stage agent workflows
 - Follow new events: `agentflow watch <session-id>`.
 - Run a configured role outside a workflow only when the user asks for ad hoc
   role execution: `agentflow agent start --role <role> --prompt "<prompt>"`.
+- Read `.agentflow/config.yaml`: `agentflow config show`.
+- Change a model entry: `agentflow config model <name> --provider <provider> --model <model-id>`.
+  This updates every role and stage that uses the name.
+- Point one role at a model without changing a shared entry:
+  `agentflow config role <role> --provider <provider> --model <model-id>`.
+  `agentflow config role <role> --model-name <name>` points it at a name that
+  already exists. Add `--json` to read the result.
 
 Workflow commands emit progress on stderr and one result object on stdout.
 Report the session ID, session status, stop reason, decisions, and published

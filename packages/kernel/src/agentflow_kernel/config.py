@@ -80,13 +80,13 @@ def resolve_stage_spec(
     """Resolve one already loaded stage against a config mapping."""
     model_field = (
         f"stages.{stage.id}.model"
-        if stage.model_key is not None
+        if stage.model_name is not None
         else f"roles.{stage.role}.default_model"
     )
     declared = _resolve_role_cascade(
         config,
         stage.role,
-        model_key=stage.model_key,
+        model_name=stage.model_name,
         model_field=model_field,
         thinking=stage.thinking,
         thinking_label=f"Stage {stage.id}",
@@ -122,19 +122,19 @@ def resolve_role_target(
     return _resolve_role_cascade(config, role, thinking=thinking)
 
 
-def load_model_target(config: Mapping[str, Any], model_key: str) -> StageTarget:
+def load_model_target(config: Mapping[str, Any], model_name: str) -> StageTarget:
     """Resolve one named model entry without role or stage overrides."""
     models = _mapping(config.get("models"), "models")
-    model_config = _mapping(models.get(model_key), f"models.{model_key}")
+    model_config = _mapping(models.get(model_name), f"models.{model_name}")
     if "thinking" in model_config:
         raise ConfigurationError(
-            f"models.{model_key}.thinking is not supported. "
-            f"Put CLI parameters under models.{model_key}.options."
+            f"models.{model_name}.thinking is not supported. "
+            f"Put CLI parameters under models.{model_name}.options."
         )
     return StageTarget(
-        provider=_string(model_config.get("provider"), f"models.{model_key}.provider"),
-        model=_string(model_config.get("model"), f"models.{model_key}.model"),
-        options=_options(model_config.get("options"), f"models.{model_key}.options"),
+        provider=_string(model_config.get("provider"), f"models.{model_name}.provider"),
+        model=_string(model_config.get("model"), f"models.{model_name}.model"),
+        options=_options(model_config.get("options"), f"models.{model_name}.options"),
     )
 
 
@@ -142,7 +142,7 @@ def _resolve_role_cascade(
     config: dict[str, Any],
     role_key: str,
     *,
-    model_key: Optional[str] = None,
+    model_name: Optional[str] = None,
     model_field: Optional[str] = None,
     thinking: Optional[str] = None,
     thinking_label: Optional[str] = None,
@@ -150,8 +150,8 @@ def _resolve_role_cascade(
     roles = _mapping(config.get("roles"), "roles")
     role = _mapping(roles.get(role_key), f"roles.{role_key}")
     resolved_field = model_field or f"roles.{role_key}.default_model"
-    resolved_model_key = _string(model_key or role.get("default_model"), resolved_field)
-    target = load_model_target(config, resolved_model_key)
+    resolved_model_name = _string(model_name or role.get("default_model"), resolved_field)
+    target = load_model_target(config, resolved_model_name)
     options = dict(target.options)
     role_thinking = role.get("thinking")
     if isinstance(role_thinking, str):

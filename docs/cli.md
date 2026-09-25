@@ -53,6 +53,50 @@ is not a terminal.
 An existing valid project is left unchanged. A partial `.agentflow/` directory
 stops init and lists the files in the way.
 
+## Config
+
+```bash
+agentflow config show
+agentflow config model
+agentflow config model <name> --provider grok --model grok-4.7 --thinking medium
+agentflow config role
+agentflow config role reviewer --model-name plain
+agentflow config role reviewer --provider grok --model grok-4.7 --thinking high
+```
+
+`config` with no command prints help. `config show` prints
+`.agentflow/config.yaml` as stored.
+
+In a terminal, `config model` or `config role` with no arguments opens a list.
+The last choice adds a model or a role. Choosing a model edits that entry.
+Choosing a role points that role at a model, or adds a model for it.
+
+Pass the flags to write without prompts. `--model` is the provider model id.
+`--model-name` is the name under `models:` in `.agentflow/config.yaml`.
+`--provider` and `--model` are passed together. Model ids come from that
+provider's CLI.
+
+`config model <name>` creates a missing name and updates an existing one. An
+update changes every role and stage that uses the name. `--thinking` sets
+`options.thinking` and leaves other options in place. `--clear-thinking`
+removes it.
+
+`config role <role> --model-name <name>` changes only that role's
+`default_model`. Several roles can share one `--model-name`.
+`config role <role> --provider <provider> --model <model-id>` reuses an entry
+with the same provider, model id, and empty options, or adds a new name, and
+points only that role at it. A shared entry is left unchanged.
+`--thinking` on `role` writes `roles.<role>.thinking` for one role.
+
+After a write, the command names the roles that changed, the stages that
+follow, and the stages that stay put because they set their own `model` or
+`thinking`. A model name that nothing points at anymore is reported and kept.
+The command then runs `doctor`.
+
+`--json` prints one object. Exit 0 when a list is shown or the write passes
+doctor. Exit 1 when the file is written and doctor fails. Exit 2 when the
+arguments are rejected, before the file changes.
+
 ## Project skill
 
 ```bash

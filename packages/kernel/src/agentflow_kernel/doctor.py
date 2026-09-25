@@ -68,9 +68,9 @@ def _config(
     elif not roles:
         problems.append("roles is empty.")
 
-    for model_key in sorted(models):
+    for model_name in sorted(models):
         try:
-            target = load_model_target(config, model_key)
+            target = load_model_target(config, model_name)
         except ConfigurationError as exc:
             _add(problems, str(exc))
             continue
@@ -78,11 +78,11 @@ def _config(
         if adapter is None:
             _add(
                 problems,
-                f"models.{model_key}.provider is not supported: {target.provider}",
+                f"models.{model_name}.provider is not supported: {target.provider}",
             )
             continue
         executable_by_provider.setdefault(target.provider, adapter.command)
-        _reject_options(problems, f"models.{model_key}.options", adapter, target.options)
+        _reject_options(problems, f"models.{model_name}.options", adapter, target.options)
 
     role_names: list[str] = []
     for role_key in sorted(roles):
