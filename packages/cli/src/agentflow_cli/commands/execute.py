@@ -144,7 +144,7 @@ def execute_continue(
     A value below 1 is an error.
     --max-dispatches limits stage dispatches in this command. The default is 20.
     A value below 1 is an error. --unlimited-dispatches removes that ceiling.
-    The revision count is kept.
+    Revision counts reset for this session when continue starts.
 
     Provider, model, and prompt come from the workflow and config.yaml.
     Stdout is one JSON object: session_id, session_status, stop_reason, outputs, stages.
@@ -264,6 +264,7 @@ def execute_workflow(
             max_attempts=None if once else max_attempts,
             max_dispatches=None if once else max_dispatches,
             once=once,
+            reset_revisions=action == "continue",
         ),
         runner=runner or AgentToolRunner(),
     )

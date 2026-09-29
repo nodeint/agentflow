@@ -749,6 +749,66 @@ stages:
 
 
 class RevisionCeilingTests(unittest.TestCase):
+    def test_continue_resets_revision_count_and_stage_keeps_new_limit(self) -> None:
+        workflow = _REVISION_LOOP.replace("max_revisions: 0", "max_revisions: 1")
+        workspace = write_fake_workflow_workspace({"loop": workflow})
+        first = ScriptedAdapter(
+            [
+                "status: complete\n\ninitial plan",
+                "status: complete\ndecision: revise\n\nrevise",
+                "status: complete\n\nfirst revision",
+                "status: complete\ndecision: revise\n\nrevise again",
+            ],
+            artifacts=["# Initial\n", None, "# First revision\n", None],
+        )
+        code, objects = _run_execute(
+            workspace, ["start", "loop", "--task", "Write a plan"], first
+        )
+        self.assertEqual(code, 4)
+        self.assertEqual(objects[-1]["stop_reason"], "revisions_exhausted")
+        session_id = objects[-1]["session_id"]
+
+        second = ScriptedAdapter(
+            ["status: complete\n\nsecond revision"],
+            artifacts=["# Second revision\n"],
+        )
+        code, objects = _run_execute(
+            workspace,
+            ["continue", session_id, "--max-dispatches", "1"],
+            second,
+        )
+        self.assertEqual(code, 5)
+        self.assertEqual(objects[-1]["stop_reason"], "dispatch_limit")
+        self.assertEqual(len(second.calls), 1)
+        status_path = workspace / ".agentflow" / "sessions" / session_id / "status.json"
+        self.assertEqual(
+            json.loads(status_path.read_text(encoding="utf-8"))["revision_baselines"],
+            {"plan": 2, "review-plan": 2},
+        )
+
+        reviewer = ScriptedAdapter(
+            ["status: complete\ndecision: revise\n\nrevise again"]
+        )
+        code, _ = _run_execute(workspace, ["stage", session_id], reviewer)
+        self.assertEqual(code, 0)
+        stopped = ScriptedAdapter(["status: complete\n\nshould not run"])
+        code, objects = _run_execute(workspace, ["stage", session_id], stopped)
+        self.assertEqual(code, 4)
+        self.assertEqual(objects[-1]["stop_reason"], "revisions_exhausted")
+        self.assertEqual(stopped.calls, [])
+
+        last = ScriptedAdapter(
+            [
+                "status: complete\n\nthird revision",
+                "status: complete\ndecision: approved\n\napproved",
+            ],
+            artifacts=["# Third revision\n", None],
+        )
+        code, objects = _run_execute(workspace, ["continue", session_id], last)
+        self.assertEqual(code, 0)
+        self.assertEqual(objects[-1]["stop_reason"], "completed")
+        self.assertEqual(len(last.calls), 2)
+
     def test_revise_stops_before_another_plan_and_later_commands_stop_too(self) -> None:
         workspace = write_fake_workflow_workspace({"loop": _REVISION_LOOP})
         adapter = ScriptedAdapter(

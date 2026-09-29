@@ -283,6 +283,21 @@ class SessionStore:
     def read_session_status(self, session_id: str) -> Dict[str, Any]:
         return self._read_session_status(self.sessions_directory / session_id)
 
+    def reset_revision_counts(
+        self, session_id: str, snapshots: List[ExecutionSnapshot]
+    ) -> None:
+        session_directory = self.sessions_directory / session_id
+        status = self._read_session_status(session_directory)
+        counts: Dict[str, int] = {}
+        for snapshot in snapshots:
+            if snapshot.status == "completed" and snapshot.outcome_status == "complete":
+                counts[snapshot.stage_id] = counts.get(snapshot.stage_id, 0) + 1
+        status["revision_baselines"] = counts
+        status["updated_at"] = utc_now()
+        (session_directory / "status.json").write_text(
+            json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
     def execution_snapshots(self, session_id: str) -> list[ExecutionSnapshot]:
         return self._execution_snapshots(session_id)
 
@@ -626,6 +641,7 @@ class SessionStore:
                     "current_stage",
                     "outputs",
                     "workspace_id",
+                    "revision_baselines",
                 }
             }
         current_stage = previous_status.get("current_stage")
@@ -636,6 +652,8 @@ class SessionStore:
                 preserved["outputs"] = outputs
             if "workspace_id" in previous_status:
                 preserved["workspace_id"] = previous_status["workspace_id"]
+            if "revision_baselines" in previous_status:
+                preserved["revision_baselines"] = previous_status["revision_baselines"]
             return preserved
         return {
             key: value
@@ -653,6 +671,7 @@ class SessionStore:
                 "latest_stage_id",
                 "outputs",
                 "workspace_id",
+                "revision_baselines",
             }
         }
 

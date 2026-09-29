@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence, Union
+from typing import Mapping, Optional, Sequence, Union
 
 from .outputs import ExecutionSnapshot
 from .workflow import StageSpec, WorkflowDocument
@@ -119,11 +119,13 @@ def revision_stop(
     workflow: WorkflowDocument,
     snapshots: Sequence[ExecutionSnapshot],
     stage_id: str,
+    revision_baselines: Optional[Mapping[str, int]] = None,
 ) -> bool:
     """True when another routed visit would pass the stage's max_revisions.
 
     The first successful visit is free. Each later successful visit is one
     revision. A failed retry of the visit already started does not count.
+    A baseline records the successful visits at the most recent continue.
     """
     stage = workflow.stages.get(stage_id)
     if stage is None or stage.max_revisions is None:
@@ -144,7 +146,8 @@ def revision_stop(
     )
     if completed == 0:
         return False
-    return completed - 1 >= stage.max_revisions
+    baseline = max(1, (revision_baselines or {}).get(stage_id, 1))
+    return completed - baseline >= stage.max_revisions
 
 
 def _routed_next_stage(

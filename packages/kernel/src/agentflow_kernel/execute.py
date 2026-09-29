@@ -44,6 +44,7 @@ class ExecuteRequest:
     max_attempts: Optional[int] = 3
     max_dispatches: Optional[int] = DEFAULT_MAX_DISPATCHES
     once: bool = False
+    reset_revisions: bool = False
 
 _EXECUTE_EXIT_CODES = {
     "completed": 0,
@@ -101,6 +102,13 @@ def execute_named_workflow(
         print(f"[agentflow] session_id: {session_id}", file=sys.stderr, flush=True)
     if workflow is None:
         workflow = load_named_workflow(workspace, workflow_id)
+    if request.reset_revisions:
+        store.reap_orphaned_executions(session_id, on_live_owner="raise")
+        snapshots = store.execution_snapshots(session_id)
+        status = store.read_session_status(session_id)
+        selected = _selected_stage(workflow, snapshots, str(status.get("status") or ""))
+        if isinstance(selected, NextStage):
+            store.reset_revision_counts(session_id, snapshots)
     previous_handlers = {
         signal.SIGINT: signal.signal(signal.SIGINT, raise_cancellation),
         signal.SIGTERM: signal.signal(signal.SIGTERM, raise_cancellation),
@@ -194,7 +202,9 @@ def _run_execute_once(
         raise ConfigurationError(
             f"Stage {stage_id} is not the eligible stage {selected.stage_id}."
         )
-    if revision_stop(workflow, snapshots, selected.stage_id):
+    if revision_stop(
+        workflow, snapshots, selected.stage_id, status.get("revision_baselines")
+    ):
         _print_execute_final(status, "revisions_exhausted", [])
         return _EXECUTE_EXIT_CODES["revisions_exhausted"]
     assert_stage_dispatchable(workspace, workflow, session_id, selected.stage_id)
@@ -242,7 +252,9 @@ def _run_execute_loop(
         if failed_stage_count(snapshots, selected.stage_id) >= max_attempts:
             _print_execute_final(status, "retry_exhausted", stages)
             return _EXECUTE_EXIT_CODES["retry_exhausted"]
-        if revision_stop(workflow, snapshots, selected.stage_id):
+        if revision_stop(
+            workflow, snapshots, selected.stage_id, status.get("revision_baselines")
+        ):
             _print_execute_final(status, "revisions_exhausted", stages)
             return _EXECUTE_EXIT_CODES["revisions_exhausted"]
         if max_dispatches is not None and dispatched >= max_dispatches:

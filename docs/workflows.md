@@ -60,6 +60,9 @@ plan -> review -> revise  # refused; session remains active
 
 The review after the third revision still runs. Agentflow stops only when its
 decision would exceed the configured limit.
+Run `agentflow continue <session-id>` to reset the revision count and allow up
+to three more revisions in the same session. Each later `continue` resets the
+count again.
 
 ## Completion outputs
 

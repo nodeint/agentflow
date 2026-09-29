@@ -50,10 +50,11 @@ describe it as completed.
 
 `retry_exhausted` means the stage has used its total failed-attempt allowance;
 `--attempts` on `continue` sets a new total, not extra retries.
-`revisions_exhausted` requires changing the workflow's `max_revisions` before
-another revision can run. `dispatch_limit` applies to the current command;
-continue the same session if further stages are appropriate. Do not start a
-replacement session just to reset these limits.
+`revisions_exhausted` leaves the session active. `continue` resets revision
+counts for the existing session, allowing another batch up to `max_revisions`.
+`dispatch_limit` applies to the current command; continue the same session if
+further stages are appropriate. Do not start a replacement session to reset
+these limits.
 
 Published output paths are relative to
 `.agentflow/sessions/<session-id>/`. Prefer the paths reported by Agentflow over

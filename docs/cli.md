@@ -28,6 +28,8 @@ agentflow continue <session-id> --unlimited-dispatches
 `--attempts N` is the total failed-execution allowance for one stage, not an
 additional retry count. `stage` dispatches only once and has no dispatch
 ceiling. Revision limits are defined by `max_revisions` in the workflow.
+Each `continue` resets the session's revision counts before dispatching. The
+existing session history and artifacts remain available to later stages.
 
 Workflow commands write progress to stderr and one JSON result to stdout. Run
 `agentflow <command> --help` for its fields, stop reasons, and exit codes.

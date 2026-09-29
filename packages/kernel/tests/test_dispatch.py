@@ -347,12 +347,14 @@ class NextStageTests(unittest.TestCase):
             _snapshot("review", 2, decision="revise"),
         ]
         self.assertFalse(revision_stop(workflow, first_return, "plan"))
+        self.assertFalse(revision_stop(workflow, first_return, "plan", {"plan": 0}))
         self.assertFalse(revision_stop(workflow, first_return, "review"))
         spent = first_return + [
             _snapshot("plan", 3),
             _snapshot("review", 4, decision="revise"),
         ]
         self.assertTrue(revision_stop(workflow, spent, "plan"))
+        self.assertFalse(revision_stop(workflow, spent, "plan", {"plan": 2}))
         retry = first_return + [
             _snapshot("plan", 3, status="failed", outcome_status=None)
         ]
