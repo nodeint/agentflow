@@ -7,6 +7,12 @@ models:
     options:
       reasoning-effort: medium
 
+  grok-high:
+    provider: grok
+    model: grok-4.7
+    options:
+      reasoning-effort: high
+
   gpt-6-sol:
     provider: codex
     model: gpt-6-sol
@@ -17,6 +23,6 @@ roles:
   developer:
     default_model: grok
   planner:
-    default_model: grok
+    default_model: grok-high
   reviewer:
     default_model: gpt-6-sol
