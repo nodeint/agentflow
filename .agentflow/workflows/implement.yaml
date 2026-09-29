@@ -5,8 +5,23 @@ stages:
   - id: implement
     role: developer
     depends_on: []
+    max_revisions: 3
     instructions:
       - Implement the requested change.
       - Verify the result with relevant checks or tests.
+  - id: review
+    role: reviewer
+    depends_on:
+      - implement
+    instructions:
+      - Review the implementation for correctness, missing requirements, and test coverage.
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: implement
 completion:
-  stage: implement
+  stage: review
+  decision: approved
