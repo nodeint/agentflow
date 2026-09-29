@@ -15,4 +15,5 @@ members = ["packages/*"]
 [tool.uv.sources]
 agentflow-kernel = { workspace = true }
 agentflow-adapters = { workspace = true }
+agentflow-registry = { workspace = true }
 agentflow-cli = { workspace = true }

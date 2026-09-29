@@ -144,6 +144,34 @@ and whether each provider CLI named in config is on `PATH`. It does not run
 those CLIs or check their login. Exit 0 when every check passes, and exit 1
 when a check fails.
 
+## Workspace registry
+
+```bash
+agentflow service start [--port N] [--foreground]
+agentflow service stop
+agentflow service status [--json]
+
+agentflow workspace register [--path DIR] [--name TEXT]
+agentflow workspace list [--json]
+agentflow workspace remove ID
+```
+
+`service start` runs a registry on `127.0.0.1`. The default port is 47321.
+Without `--foreground` it detaches and adopts an instance only when the
+lifetime lock, process identity, and authenticated health all agree.
+`--foreground` serves in the current process until SIGINT or SIGTERM.
+`service stop` exits 0 when the service is already absent or was stopped, and
+exits 1 when the process is still alive or its identity cannot be verified.
+`status` prints `running` or `stopped`. A stale `service.json` is `stopped`.
+The bearer token is not printed.
+
+`workspace register` records the directory that contains
+`.agentflow/config.yaml`. A relative `--path` is resolved from the invocation
+directory, and the stored path is that absolute root. Registering the same
+resolved path again keeps the same id. `list` shows `available: false` when
+the config file is gone. `remove` drops one id and exits 2 when the id is
+unknown. The registry listens for clients on `http://127.0.0.1:{port}`.
+
 ## Session commands
 
 ```bash

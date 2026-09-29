@@ -49,7 +49,7 @@ provider CLIs named by your configuration.
 Install Agentflow from any directory:
 
 ```bash
-uv tool install --with 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/kernel' --with 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/adapters' 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/cli'
+uv tool install --with 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/kernel' --with 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/adapters' --with 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/registry' 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/cli'
 ```
 
 Verify with `agentflow --help`.
@@ -187,7 +187,8 @@ capabilities behind a lowest-common-denominator API.
 
 Today, Agentflow supports Codex and Grok, explicit stage routing, review loops,
 local session history, provider-session resume, prerequisite workflows, and
-standalone role execution.
+standalone role execution. A machine-local registry service records workspaces
+so another tool can ask which projects exist.
 
 ## Documentation
 
@@ -201,8 +202,8 @@ and exit codes.
 
 ## Development
 
-The workspace contains `agentflow-kernel`, `agentflow-adapters`, and
-`agentflow-cli`. See [CONTRIBUTION.md](CONTRIBUTION.md) for repository layout,
+The workspace contains `agentflow-kernel`, `agentflow-adapters`,
+`agentflow-registry`, and `agentflow-cli`. See [CONTRIBUTION.md](CONTRIBUTION.md) for repository layout,
 test conventions, and development commands.
 
 ## License

@@ -1,11 +1,12 @@
 # Contribution
 
-The workspace has three packages:
+The workspace has four packages:
 
 | Package | Import | Role |
 | :--- | :--- | :--- |
 | `packages/kernel` | `agentflow_kernel` | Workflow selection, execute, session records, and the session store. |
 | `packages/adapters` | `agentflow_adapters` | Headless `grok` and `codex` CLIs. |
+| `packages/registry` | `agentflow_registry` | Machine-local workspace registry service. |
 | `packages/cli` | `agentflow_cli` | `agentflow` command and usage help. |
 
 This repository does not contain a project's `.agentflow/` directory.
@@ -30,6 +31,7 @@ Classes are `<Unit>Tests`. Methods are `test_<behavior>` and name the outcome. E
 ```bash
 uv run python -m unittest discover -s packages/kernel/tests -t packages/kernel -p 'test_*.py'
 uv run python -m unittest discover -s packages/adapters/tests -t packages/adapters -p 'test_*.py'
+uv run python -m unittest discover -s packages/registry/tests -t packages/registry -p 'test_*.py'
 uv run python -m unittest discover -s packages/cli/tests -t packages/cli -p 'test_*.py'
 uv run python -m unittest discover -s integration -t . -p 'test_*.py'
 ```

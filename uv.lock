@@ -7,6 +7,7 @@ members = [
     "agentflow-adapters",
     "agentflow-cli",
     "agentflow-kernel",
+    "agentflow-registry",
     "agentflow-workspace",
 ]
 
@@ -28,6 +29,7 @@ source = { editable = "packages/cli" }
 dependencies = [
     { name = "agentflow-adapters" },
     { name = "agentflow-kernel" },
+    { name = "agentflow-registry" },
     { name = "inquirerpy" },
     { name = "rich" },
     { name = "typer" },
@@ -37,6 +39,7 @@ dependencies = [
 requires-dist = [
     { name = "agentflow-adapters", editable = "packages/adapters" },
     { name = "agentflow-kernel", editable = "packages/kernel" },
+    { name = "agentflow-registry", editable = "packages/registry" },
     { name = "inquirerpy", specifier = ">=0.3.4" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "typer", specifier = ">=0.20" },
@@ -46,6 +49,17 @@ requires-dist = [
 name = "agentflow-kernel"
 version = "0.1.0"
 source = { editable = "packages/kernel" }
+
+[[package]]
+name = "agentflow-registry"
+version = "0.1.0"
+source = { editable = "packages/registry" }
+dependencies = [
+    { name = "agentflow-kernel" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "agentflow-kernel", editable = "packages/kernel" }]
 
 [[package]]
 name = "agentflow-workspace"

@@ -1,0 +1,15 @@
+[project]
+name = "agentflow-registry"
+version = "0.1.0"
+description = "Machine-local workspace registry service for Agentflow."
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = ["agentflow-kernel"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentflow_registry"]

@@ -8,6 +8,7 @@ requires-python = ">=3.11"
 dependencies = [
     "agentflow-kernel",
     "agentflow-adapters",
+    "agentflow-registry",
     "rich>=15.0.0",
     "typer>=0.20",
     "inquirerpy>=0.3.4",
