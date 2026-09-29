@@ -767,6 +767,18 @@ class RevisionCeilingTests(unittest.TestCase):
         self.assertEqual(code, 4)
         self.assertEqual(objects[-1]["stop_reason"], "revisions_exhausted")
         session_id = objects[-1]["session_id"]
+        executions = workspace / ".agentflow" / "sessions" / session_id / "executions"
+        revision_prompt = (
+            executions / objects[2]["execution_id"] / "prompt.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            str(executions / objects[1]["execution_id"] / "response.md"),
+            revision_prompt,
+        )
+        self.assertIn(
+            str(executions / objects[0]["execution_id"] / "artifacts" / "plan.md"),
+            revision_prompt,
+        )
 
         second = ScriptedAdapter(
             ["status: complete\n\nsecond revision"],

@@ -36,6 +36,9 @@ def build_stage_prompt(
     upstream = _upstream_artifact_lines(workflow, stage.depends_on, snapshots)
     if upstream:
         sections.append("Upstream artifacts on this session:\n" + "\n".join(upstream))
+    routed = _routed_result_lines(workflow, stage_id, snapshots)
+    if routed:
+        sections.append("Decision that routed to this stage:\n" + "\n".join(routed))
     prior = _prior_result_lines(workspace, prior_session_id, prior_outputs)
     if prior:
         sections.append("Required prior workflow result:\n" + "\n".join(prior))
@@ -62,6 +65,41 @@ def _upstream_artifact_lines(
             continue
         path = (snapshot.artifact_directory / dep.artifact).resolve()
         lines.append(f"- {dep_id}: {path}")
+    return lines
+
+
+def _routed_result_lines(
+    workflow: WorkflowDocument,
+    stage_id: str,
+    snapshots: Sequence[ExecutionSnapshot],
+) -> list[str]:
+    complete = latest_complete_by_stage(snapshots)
+    previous = complete.get(stage_id)
+    previous_order = previous.execution_order if previous else 0
+    routed = [
+        snapshot
+        for snapshot in snapshots
+        if snapshot.status == "completed"
+        and snapshot.outcome_status == "complete"
+        and snapshot.execution_order > previous_order
+        and (source := workflow.stages.get(snapshot.stage_id)) is not None
+        and source.routes.get((snapshot.outcome_decision or "").lower()) == stage_id
+    ]
+    if not routed:
+        return []
+    decision = max(routed, key=lambda snapshot: snapshot.execution_order)
+    response = (decision.artifact_directory.parent / "response.md").resolve()
+    if not response.is_file():
+        raise ValueError(f"Routed stage response is missing: {response}")
+    lines = [
+        f"- {decision.stage_id} ({decision.outcome_decision}): {response}",
+        "Read this response and use its decision and feedback when working on this stage.",
+    ]
+    stage = workflow.stages[stage_id]
+    if previous and stage.artifact:
+        artifact = (previous.artifact_directory / stage.artifact).resolve()
+        if artifact.is_file():
+            lines.append(f"- Previous {stage_id} artifact: {artifact}")
     return lines
 
 

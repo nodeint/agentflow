@@ -38,6 +38,10 @@ A decision stage declares every accepted value and its destination:
 
 A destination is another declared stage or `complete`. Route keys must exactly
 match the declared decision values.
+When a decision routes to another stage, Agentflow includes the decision
+execution's `response.md` in the destination prompt. On a return to a stage,
+the prompt also references that stage's latest artifact when one exists.
+Decision stages do not need to declare an artifact to pass feedback.
 
 ## Revision limits
 

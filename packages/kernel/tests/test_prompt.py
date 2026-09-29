@@ -155,8 +155,13 @@ class BuildStagePromptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             failed = Path(tmp) / "implement-failed"
             ok = Path(tmp) / "implement-ok"
+            review = Path(tmp) / "review-work"
             failed.mkdir()
             ok.mkdir()
+            review.mkdir()
+            (review / "response.md").write_text(
+                "status: complete\ndecision: approved\n", encoding="utf-8"
+            )
             prompt = build_stage_prompt(
                 workflow=_workflow("plan-implement"),
                 stage_id="write-tests",
@@ -170,14 +175,84 @@ class BuildStagePromptTests(unittest.TestCase):
                         outcome_status=None,
                     ),
                     _snapshot("implement", 2, ok),
-                    _snapshot("review-work", 3, Path(tmp), decision="approved"),
+                    _snapshot("review-work", 3, review / "artifacts", decision="approved"),
                 ],
                 workspace=Path(tmp),
             )
         self.assertIn(str((ok / "implementation-result.md").resolve()), prompt)
         self.assertNotIn(str((failed / "implementation-result.md").resolve()), prompt)
         self.assertIn("Write the file artifact as `test-result.md`", prompt)
-        self.assertNotIn("review-work:", prompt)
+        self.assertIn(str((review / "response.md").resolve()), prompt)
+
+    def test_revision_references_latest_review_and_previous_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            plan = workspace / "plan-1" / "artifacts"
+            review = workspace / "review-1"
+            plan.mkdir(parents=True)
+            review.mkdir()
+            (plan / "plan.md").write_text("initial plan", encoding="utf-8")
+            (review / "response.md").write_text(
+                "status: complete\ndecision: revise\n\nFix the plan.",
+                encoding="utf-8",
+            )
+            prompt = build_stage_prompt(
+                workflow=_workflow("plan"),
+                stage_id="plan",
+                task="Write a plan",
+                snapshots=[
+                    _snapshot("plan", 1, plan),
+                    _snapshot("review-plan", 2, review / "artifacts", decision="revise"),
+                ],
+                workspace=workspace,
+            )
+        self.assertIn(str((review / "response.md").resolve()), prompt)
+        self.assertIn(str((plan / "plan.md").resolve()), prompt)
+        self.assertIn("Read this response and use its decision and feedback", prompt)
+
+    def test_revision_retry_keeps_the_review_that_requested_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            old_review = workspace / "review-1"
+            new_review = workspace / "review-2"
+            old_review.mkdir()
+            new_review.mkdir()
+            (old_review / "response.md").write_text("old", encoding="utf-8")
+            (new_review / "response.md").write_text("new", encoding="utf-8")
+            prompt = build_stage_prompt(
+                workflow=_workflow("plan"),
+                stage_id="plan",
+                task="Write a plan",
+                snapshots=[
+                    _snapshot("plan", 1, workspace / "plan-1"),
+                    _snapshot("review-plan", 2, old_review / "artifacts", decision="revise"),
+                    _snapshot("plan", 3, workspace / "plan-2"),
+                    _snapshot("review-plan", 4, new_review / "artifacts", decision="revise"),
+                    _snapshot(
+                        "plan", 5, workspace / "failed-plan", status="failed", outcome_status=None
+                    ),
+                ],
+                workspace=workspace,
+            )
+        self.assertIn(str((new_review / "response.md").resolve()), prompt)
+        self.assertNotIn(str((old_review / "response.md").resolve()), prompt)
+
+    def test_routed_stage_requires_its_decision_response(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            with self.assertRaisesRegex(ValueError, "Routed stage response is missing"):
+                build_stage_prompt(
+                    workflow=_workflow("plan"),
+                    stage_id="plan",
+                    task="Write a plan",
+                    snapshots=[
+                        _snapshot("plan", 1, workspace / "plan-1"),
+                        _snapshot(
+                            "review-plan", 2, workspace / "review" / "artifacts", decision="revise"
+                        ),
+                    ],
+                    workspace=workspace,
+                )
 
     def test_includes_prior_session_published_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
