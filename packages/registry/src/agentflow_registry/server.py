@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hmac
 import json
 import socket
 import threading
@@ -9,15 +8,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from .locks import RegistryBusy
-from .store import (
-    InvalidRecord,
-    NotAWorkspace,
-    RegistryCorrupt,
-    RegistryStore,
-    WorkspaceNotFound,
-)
-from .workspace import WorkspaceLocationError, locate_workspace
+from .routes import Call, build_router
+from .store import RegistryStore
 
 DEFAULT_PORT = 47321
 MAX_BODY_BYTES = 65536
@@ -152,46 +144,27 @@ class RegistryHandler(BaseHTTPRequestHandler):
     def _dispatch(self) -> None:
         path = unquote(urlsplit(self.path).path)
         method = self.command
-        if method == "GET" and path == "/v1/health":
-            self._health()
-            return
-        if path == "/v1/health":
-            self._require_auth()
-            self._send_json(405, _error("method_not_allowed", "Method is not allowed."))
-            return
-        if not self._read_limited_body_if_needed():
-            return
-        if not self._require_auth():
-            return
-        if path == "/v1/workspaces":
-            if method == "GET":
-                self._list()
-            elif method == "POST":
-                self._create()
-            else:
-                self._send_json(405, _error("method_not_allowed", "Method is not allowed."))
-            return
-        prefix = "/v1/workspaces/"
-        if path.startswith(prefix) and path.count("/") == 3 and len(path) > len(prefix):
-            workspace_id = path[len(prefix) :]
-            if method == "GET":
-                self._get(workspace_id)
-            elif method == "DELETE":
-                self._delete(workspace_id)
-            else:
-                self._send_json(405, _error("method_not_allowed", "Method is not allowed."))
-            return
-        self._send_json(404, _error("workspace_not_found", "Not found."))
+        body: bytes | None = None
+        if self.server.router.should_read_body(method, path):
+            if not self._read_limited_body_if_needed():
+                return
+            body = self._body
+        result = self.server.router.dispatch(
+            Call(
+                method=method,
+                path=path,
+                store=self.server.store,
+                token=self.server.token,
+                instance_id=self.server.instance_id,
+                authorization=self.headers.get("Authorization"),
+                body=body,
+                before_store=self._clear_read_timeout,
+            )
+        )
+        self._send_json(result.status, result.payload)
 
-    def _health(self) -> None:
-        state = self._auth_state()
-        if state == "bad":
-            self._send_json(401, _error("unauthorized", "Bearer token is missing or incorrect."))
-            return
-        if state == "ok":
-            self._send_json(200, {"ok": True, "instance_id": self.server.instance_id})
-            return
-        self._send_json(200, {"ok": True})
+    def _clear_read_timeout(self) -> None:
+        self.connection.settimeout(None)
 
     def _read_limited_body_if_needed(self) -> bool:
         if self.command != "POST":
@@ -233,109 +206,6 @@ class RegistryHandler(BaseHTTPRequestHandler):
                 raise ShortBody()
             chunks.extend(piece)
         return bytes(chunks)
-
-    def _require_auth(self) -> bool:
-        if self._auth_state() != "ok":
-            self._send_json(
-                401, _error("unauthorized", "Bearer token is missing or incorrect.")
-            )
-            return False
-        return True
-
-    def _auth_state(self) -> str:
-        header = self.headers.get("Authorization")
-        if header is None:
-            return "absent"
-        scheme, _, rest = header.partition(" ")
-        token = rest.strip()
-        if scheme != "Bearer" or token == "" or " " in token:
-            return "bad"
-        try:
-            matches = hmac.compare_digest(token, self.server.token)
-        except (TypeError, ValueError):
-            return "bad"
-        return "ok" if matches else "bad"
-
-    def _list(self) -> None:
-        try:
-            self.connection.settimeout(None)
-            rows = self.server.store.list()
-        except (RegistryBusy, RegistryCorrupt) as exc:
-            self._store_error(exc)
-            return
-        self._send_json(200, {"workspaces": rows})
-
-    def _get(self, workspace_id: str) -> None:
-        try:
-            self.connection.settimeout(None)
-            record = self.server.store.get(workspace_id)
-        except (RegistryBusy, RegistryCorrupt, WorkspaceNotFound) as exc:
-            self._store_error(exc)
-            return
-        self._send_json(200, record)
-
-    def _delete(self, workspace_id: str) -> None:
-        try:
-            self.connection.settimeout(None)
-            record = self.server.store.remove(workspace_id)
-        except (RegistryBusy, RegistryCorrupt, WorkspaceNotFound) as exc:
-            self._store_error(exc)
-            return
-        self._send_json(200, record)
-
-    def _create(self) -> None:
-        try:
-            payload = json.loads(self._body.decode("utf-8"))
-        except (UnicodeError, json.JSONDecodeError):
-            self._send_json(400, _error("invalid_request", "Request body is not JSON."))
-            return
-        if not isinstance(payload, dict) or set(payload) - {"path", "name", "tool"} or "path" not in payload:
-            self._send_json(400, _error("invalid_request", "Request fields are invalid."))
-            return
-        raw_path = payload["path"]
-        if not isinstance(raw_path, str):
-            self._send_json(400, _error("invalid_request", "Workspace path is not absolute."))
-            return
-        name = payload.get("name")
-        if "name" in payload and (not isinstance(name, str) or not 1 <= len(name) <= 200):
-            self._send_json(400, _error("invalid_request", "Workspace name is invalid."))
-            return
-        tool = payload.get("tool")
-        if "tool" not in payload:
-            self._send_json(400, _error("invalid_request", "Tool name is invalid."))
-            return
-        try:
-            root = locate_workspace(raw_path)
-        except WorkspaceLocationError as exc:
-            self._send_json(400, _error("invalid_request", str(exc)))
-            return
-        try:
-            self.connection.settimeout(None)
-            record, created = self.server.store.register(
-                str(root), name if isinstance(name, str) else None, tool
-            )
-        except (InvalidRecord, NotAWorkspace) as exc:
-            self._send_json(400, _error("invalid_request", str(exc)))
-            return
-        except (RegistryBusy, RegistryCorrupt) as exc:
-            self._store_error(exc)
-            return
-        self._send_json(201 if created else 200, record)
-
-    def _store_error(self, exc: Exception) -> None:
-        if isinstance(exc, RegistryBusy):
-            self._send_json(409, _error("registry_busy", "The registry is busy."))
-            return
-        if isinstance(exc, RegistryCorrupt):
-            self._send_json(
-                409,
-                _error("registry_corrupt", "registry.json is corrupt and was left unchanged."),
-            )
-            return
-        if isinstance(exc, WorkspaceNotFound):
-            self._send_json(404, _error("workspace_not_found", str(exc)))
-            return
-        self._send_json(400, _error("invalid_request", str(exc)))
 
     def _write_timeout(self) -> None:
         if self._response_started:
@@ -406,6 +276,7 @@ class RegistryHTTPServer(ThreadingHTTPServer):
         self.max_body_bytes = max_body_bytes
         self.in_flight = 0
         self._in_flight_lock = threading.Lock()
+        self.router = build_router()
         super().__init__((host, port), RegistryHandler, bind_and_activate)
 
     def adjust_in_flight(self, delta: int) -> None:
