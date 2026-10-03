@@ -103,3 +103,47 @@ blocker: The required API schema is missing.
 
 If the stage declares `decision.values`, a completed response must include one
 of them in the `decision` header.
+
+## Complete example
+
+`.agentflow/workflows/plan.yaml` for a plan that is reviewed and sent back for
+revision:
+
+```yaml
+schema_version: 1
+id: plan
+constraints:
+  - Do not write implementation code.
+
+stages:
+  - id: plan
+    role: planner
+    depends_on: []
+    max_revisions: 3
+    instructions:
+      - Analyze the task and write an implementation plan.
+    produces:
+      artifact: plan.md
+
+  - id: review-plan
+    role: reviewer
+    depends_on: [plan]
+    instructions:
+      - Review the plan for correctness, missing risks, and unnecessary scope.
+    decision:
+      values: [approved, revise]
+      routes:
+        approved: complete
+        revise: plan
+
+completion:
+  stage: review-plan
+  decision: approved
+  outputs:
+    - name: plan
+      from_stage: plan
+      artifact: plan.md
+```
+
+`agentflow init --preset plan` writes the same stages. Its file omits
+`constraints` and uses block lists for `depends_on` and `decision.values`.

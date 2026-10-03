@@ -20,6 +20,35 @@ roles:
 Use model identifiers and option values supported by the installed provider
 CLI.
 
+Roles can point at different providers. A planner on Codex and a reviewer on
+Grok:
+
+```yaml
+schema_version: 1
+models:
+  planner-model:
+    provider: codex
+    model: gpt-5
+    options:
+      model_reasoning_effort: medium
+
+  reviewer-model:
+    provider: grok
+    model: grok-4
+    options:
+      reasoning-effort: high
+
+roles:
+  planner:
+    default_model: planner-model
+  reviewer:
+    default_model: reviewer-model
+```
+
+`agentflow init --preset plan` writes this kind of file. In a terminal it can
+give the reviewer its own model entry. The names above are an example. Init
+uses `default` and, when the reviewer has a second model, `review`.
+
 ## Options
 
 Each adapter names its own options and lists the values for the selected

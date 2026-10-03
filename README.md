@@ -11,6 +11,20 @@ where the process is.
 
 Agentflow currently supports the headless `codex` and `grok` CLIs.
 
+## Contents
+
+- [Why Agentflow?](#why-agentflow)
+- [Quickstart](#quickstart)
+  - [Install](#install)
+  - [Upgrade](#upgrade)
+  - [Create a project](#create-a-project)
+  - [Run](#run)
+- [Concepts](#concepts)
+- [Current scope](#current-scope)
+- [Documentation](#documentation)
+- [Development](#development)
+- [License](#license)
+
 ## Why Agentflow?
 
 Calling two agent CLIs from a shell script is easy. Reliably coordinating them
@@ -43,10 +57,12 @@ flowchart LR
 
 ## Quickstart
 
-Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), and authenticated
-provider CLIs named by your configuration.
+Python 3.11+, [uv](https://docs.astral.sh/uv/), and authenticated provider CLIs
+named by your configuration.
 
-Install Agentflow from any directory:
+### Install
+
+From any directory:
 
 ```bash
 uv tool install --with 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/kernel' --with 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/adapters' --with 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/registry' 'git+ssh://git@github.com/nodeint/agentflow.git#subdirectory=packages/cli'
@@ -54,103 +70,53 @@ uv tool install --with 'git+ssh://git@github.com/nodeint/agentflow.git#subdirect
 
 Verify with `agentflow --help`.
 
-In the project where agents will work, create two files:
+### Upgrade
+
+Upgrade an existing install to the latest commit on the default branch:
+
+```bash
+uv tool upgrade agentflow-cli
+```
+
+That refreshes the packages recorded at install time. When the install command
+gains or drops a package, run the `uv tool install` command above again.
+
+### Create a project
+
+From the project where agents will work:
+
+```bash
+agentflow init --preset plan
+```
+
+`init` writes the config, a plan-and-review workflow, and a gitignore for local
+session state:
 
 ```text
 .agentflow/
 ├── config.yaml
+├── .gitignore
 └── workflows/
     └── plan.yaml
 ```
 
-`.agentflow/config.yaml` assigns provider models to roles:
+In a terminal, pick the provider, model, and prompted options from the lists.
+Pass `--provider` and `--model` together when input is not a terminal. Commit
+`config.yaml` and `workflows/`. Leave `.agentflow/sessions/` untracked.
 
-```yaml
-schema_version: 1
-models:
-  planner-model:
-    provider: codex
-    model: gpt-5
-    options:
-      model_reasoning_effort: medium
+Model and role shape is in [Providers and model configuration](docs/providers.md).
+A full plan workflow is in [Writing workflows](docs/workflows.md#complete-example).
 
-  reviewer-model:
-    provider: grok
-    model: grok-4
-    options:
-      reasoning-effort: high
+### Run
 
-roles:
-  planner:
-    default_model: planner-model
-  reviewer:
-    default_model: reviewer-model
-```
-
-Use model identifiers supported by your installed provider CLIs. Prompted
-option values are the ones that CLI lists for the model you picked.
-
-`.agentflow/workflows/plan.yaml` defines the process:
-
-```yaml
-schema_version: 1
-id: plan
-constraints:
-  - Do not write implementation code.
-
-stages:
-  - id: plan
-    role: planner
-    depends_on: []
-    max_revisions: 3
-    instructions:
-      - Analyze the task and write an implementation plan.
-    produces:
-      artifact: plan.md
-
-  - id: review-plan
-    role: reviewer
-    depends_on: [plan]
-    instructions:
-      - Review the plan for correctness, missing risks, and unnecessary scope.
-    decision:
-      values: [approved, revise]
-      routes:
-        approved: complete
-        revise: plan
-
-completion:
-  stage: review-plan
-  decision: approved
-  outputs:
-    - name: plan
-      from_stage: plan
-      artifact: plan.md
-```
-
-Run the workflow from that project or any of its subdirectories:
+From that project or any of its subdirectories:
 
 ```bash
 agentflow start plan --task "Plan the account settings redesign"
 ```
 
 Agentflow runs the next eligible stage until the workflow completes or stops.
-Progress goes to stderr; stdout contains one JSON result with the session ID,
-status, stop reason, stage results, and published outputs.
-
-```json
-{
-  "session_id": "<session-id>",
-  "session_status": "completed",
-  "stop_reason": "completed",
-  "outputs": {
-    "plan": {}
-  },
-  "stages": {}
-}
-```
-
-Inspect or resume the recorded session:
+Progress goes to stderr. Stdout is one JSON result.
 
 ```bash
 agentflow sessions
@@ -158,9 +124,9 @@ agentflow watch <session-id>
 agentflow continue <session-id>
 ```
 
-Commit `.agentflow/config.yaml` and `.agentflow/workflows/`. Keep
-`.agentflow/sessions/` out of version control; it contains machine-local
-execution state and generated artifacts.
+Command fields and exit codes are in
+[CLI commands and execution controls](docs/cli.md). Session files are in
+[Sessions and workflow composition](docs/sessions.md).
 
 ## Concepts
 
