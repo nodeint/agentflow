@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
 import uuid
 
 from .command_executor import TERMINATION_GRACE_SEC
+from .config import ConfigurationError
 from .event_kinds import STATUS_PROVIDER_EVENTS
 from .outputs import (
     ExecutionSnapshot,
@@ -46,7 +47,7 @@ from .runtime import (
     utc_now,
 )
 from .stage_outcome import StageOutcome
-from .workflow import WorkflowDocument, load_workflow_document
+from .workflow import WorkflowDocument, load_named_workflow, load_workflow_document
 
 
 def _string_options(value: Any) -> Dict[str, str]:
@@ -576,14 +577,21 @@ class SessionStore:
         if previous_status.get("workflow_id") == "agent":
             return None
         workflow_path = previous_status.get("workflow_path")
-        if not isinstance(workflow_path, str) or not workflow_path:
-            return None
-        path = self.workspace / workflow_path
-        if not path.is_file():
+        if isinstance(workflow_path, str) and workflow_path:
+            path = Path(workflow_path)
+            if not path.is_absolute():
+                path = self.workspace / workflow_path
+            if path.is_file():
+                try:
+                    return load_workflow_document(path)
+                except ValueError:
+                    pass
+        workflow_id = previous_status.get("workflow_id")
+        if not isinstance(workflow_id, str) or not workflow_id:
             return None
         try:
-            return load_workflow_document(path)
-        except ValueError:
+            return load_named_workflow(self.workspace, workflow_id)
+        except ConfigurationError:
             return None
 
     def _mark_session_terminal(

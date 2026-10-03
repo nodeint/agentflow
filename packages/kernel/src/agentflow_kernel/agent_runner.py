@@ -6,6 +6,7 @@ import tempfile
 from typing import Dict, Mapping, Optional, Tuple
 
 from .base_adapter import BaseCLIAdapter, NewSession
+from .config import ConfigurationError
 from .command_executor import (
     DEFAULT_TIMEOUT_SEC,
     CancellationRequested,
@@ -22,7 +23,7 @@ from .provider_events import ProviderEventReporter
 from .session_store import ExecutionContext, SessionStore
 from .outputs import nonempty_artifact
 from .stage_outcome import parse_stage_outcome
-from .workflow import load_stage
+from .workflow import load_named_workflow, load_stage
 
 
 class AgentToolRunner:
@@ -103,12 +104,19 @@ class AgentToolRunner:
         stage = None
         if session_id is not None:
             session_status = store.read_session_status(context.session_id)
-            workflow_path = session_status.get("workflow_path")
-            if (
-                isinstance(workflow_path, str)
-                and session_status.get("workflow_id") != "agent"
-            ):
-                stage = load_stage(store.workspace, workflow_path, stage_id)
+            if session_status.get("workflow_id") != "agent":
+                workflow_path = session_status.get("workflow_path")
+                if isinstance(workflow_path, str):
+                    stage = load_stage(store.workspace, workflow_path, stage_id)
+                if stage is None:
+                    workflow_id = session_status.get("workflow_id")
+                    if isinstance(workflow_id, str):
+                        try:
+                            workflow = load_named_workflow(store.workspace, workflow_id)
+                        except ConfigurationError:
+                            workflow = None
+                        if workflow is not None:
+                            stage = workflow.stages.get(stage_id)
         decision_values = stage.decision_values if stage is not None else ()
         if session_id is not None:
             turn_prompt = add_stage_outcome_contract(turn_prompt, decision_values)

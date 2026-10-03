@@ -25,7 +25,9 @@ Use Agentflow as the control plane for the project's multi-stage agent workflows
 
 ## Choose the command
 
-- Start a workflow: `agentflow start <workflow> --task "<task>"`. If its
+- Start a workflow: `agentflow start <workflow> --task "<task>"`. `<workflow>`
+  is the workflow id, or a path to a workflow file. An omitted `id` uses the
+  file name. If its
   `requires` block names a prerequisite workflow and decision, find a matching
   completed session and add `--prior <session-id>`.
 - Resume an active session: `agentflow continue <session-id>`.

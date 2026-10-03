@@ -16,6 +16,9 @@ agentflow stage --workflow <workflow> --task "<task>"
 agentflow stage <session-id>
 ```
 
+`<workflow>` is the workflow id. A path to a workflow file is also accepted.
+The id comes from the file's `id` field, or from the file name when `id` is omitted.
+
 `start` and `continue` default to three failed execution attempts per stage and
 20 stage dispatches per command. Configure those guards with:
 

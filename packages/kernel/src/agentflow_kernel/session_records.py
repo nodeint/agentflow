@@ -11,6 +11,16 @@ from .session_store import SessionStore
 from .workflow import WorkflowDocument, load_named_workflow
 
 
+def _session_workflow_path(workspace: Path, workflow: WorkflowDocument) -> str:
+    source = workflow.source
+    if source is None:
+        return f".agentflow/workflows/{workflow.id}.yaml"
+    try:
+        return source.resolve().relative_to(workspace.resolve()).as_posix()
+    except ValueError:
+        return source.as_posix()
+
+
 def allocate_session_id(sessions_directory: Path, session_id_base: str) -> str:
     session_id = session_id_base
     suffix = 2
@@ -39,6 +49,7 @@ def create_workflow_session(
     prior_session_id: Optional[str] = None,
 ) -> str:
     workflow = load_named_workflow(workspace, workflow_id)
+    workflow_id = workflow.id
     resolved_prior = resolve_prior_session_id(workspace, workflow, prior_session_id)
     task_summary = task.strip()
     if not task_summary:
@@ -50,7 +61,7 @@ def create_workflow_session(
     session_directory = sessions_directory / session_id
     session_directory.mkdir(parents=True)
     created_at = datetime.now(timezone.utc).isoformat()
-    workflow_relative_path = f".agentflow/workflows/{workflow_id}.yaml"
+    workflow_relative_path = _session_workflow_path(workspace, workflow)
     manifest_lines = [
         f"session_id: {session_id}",
         f"workflow_id: {workflow_id}",

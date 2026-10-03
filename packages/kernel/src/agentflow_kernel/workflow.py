@@ -50,6 +50,7 @@ class WorkflowDocument:
     completion: Optional[WorkflowCompletion] = None
     requires: Optional[WorkflowRequires] = None
     constraints: tuple[str, ...] = ()
+    source: Optional[Path] = None
 
 
 def workflows_directory(workspace: Path) -> Path:
@@ -57,16 +58,27 @@ def workflows_directory(workspace: Path) -> Path:
 
 
 def load_named_workflow(workspace: Path, workflow_id: str) -> WorkflowDocument:
-    """Load `.agentflow/workflows/<id>.yaml` and require that file's id to match."""
-    path = workflows_directory(workspace) / f"{workflow_id}.yaml"
-    if not path.is_file():
+    """Load a workflow by id, or by file path when the argument points at a file.
+
+    An omitted ``id`` uses the file name without ``.yaml``. A declared ``id`` is
+    the workflow name even when the file name differs. A path loads that file.
+    """
+    if _is_path_reference(workflow_id):
+        path = _resolve_workflow_path(workspace, workflow_id)
+        if path is None:
+            _fail(f"Workflow not found: {workflow_id}")
+        return _require_stages(_read_workflow_file(path))
+    matches = [
+        path
+        for path, document in _readable_workflows(workspace)
+        if document.id == workflow_id
+    ]
+    if len(matches) > 1:
+        names = ", ".join(path.name for path in matches)
+        _fail(f"{workflow_id}: id is declared by {names}.")
+    if not matches:
         _fail(f"Workflow not found: {workflow_id}")
-    document = _read_workflow_file(path)
-    if path.stem != document.id:
-        _fail(f"{path.name}: id is {document.id}.")
-    if not document.stages:
-        _fail(f"{document.id}: declares no stages.")
-    return document
+    return _require_stages(_read_workflow_file(matches[0]))
 
 
 @dataclass(frozen=True)
@@ -77,35 +89,29 @@ class WorkflowCatalog:
 
 def load_workflow_catalog(workspace: Path) -> WorkflowCatalog:
     """Load every workflow file and check ids, stages, and requires."""
-    directory = workflows_directory(workspace)
-    if not directory.is_dir():
-        return WorkflowCatalog(
-            {},
-            ("Workflows directory not found: .agentflow/workflows",),
-        )
-    paths = sorted(path for path in directory.glob("*.yaml") if path.is_file())
-    if not paths:
-        return WorkflowCatalog({}, ("No workflows in .agentflow/workflows.",))
-
-    from .config import ConfigurationError
-
+    loaded, problems = _read_workflow_directory(workspace)
+    if not loaded:
+        return WorkflowCatalog({}, tuple(problems))
+    failed_ids = _unreadable_workflow_ids(problems)
+    grouped: dict[str, list[tuple[Path, WorkflowDocument]]] = {}
+    for path, document in loaded:
+        grouped.setdefault(document.id, []).append((path, document))
     documents: dict[str, WorkflowDocument] = {}
-    problems: list[str] = []
-    for path in paths:
-        try:
-            document = _read_workflow_file(path)
-        except ConfigurationError as exc:
-            problems.append(f"{path.name}: {exc}")
+    for workflow_id, entries in grouped.items():
+        if len(entries) > 1:
+            names = ", ".join(path.name for path, _document in entries)
+            problems.append(f"{workflow_id}: id is declared by {names}.")
+            failed_ids.add(workflow_id)
             continue
-        if path.stem != document.id:
-            problems.append(f"{path.name}: id is {document.id}.")
-            continue
-        documents[document.id] = document
+        _path, document = entries[0]
+        documents[workflow_id] = document
         if not document.stages:
             problems.append(f"{document.id}: declares no stages.")
     for workflow_id, document in documents.items():
         if document.requires is not None:
-            _check_requires(workflow_id, document.requires, documents, directory, problems)
+            _check_requires(
+                workflow_id, document.requires, documents, failed_ids, problems
+            )
     return WorkflowCatalog(documents, tuple(problems))
 
 
@@ -117,7 +123,7 @@ def load_workflow_document(path: Path) -> WorkflowDocument:
     data = parse_yaml_document(text)
     if not isinstance(data, dict):
         raise ValueError(f"Workflow must be a mapping: {path}")
-    workflow_id = _required_string(data.get("id"), "id")
+    workflow_id = _document_id(data, path)
     stages = _parse_stages(data.get("stages"))
     completion_raw = data.get("completion")
     completion = (
@@ -133,6 +139,7 @@ def load_workflow_document(path: Path) -> WorkflowDocument:
         completion=completion,
         requires=requires,
         constraints=constraints,
+        source=path,
     )
 
 
@@ -159,17 +166,90 @@ def _read_workflow_file(path: Path) -> WorkflowDocument:
         _fail(str(exc), exc)
 
 
+def _document_id(data: dict[str, Any], path: Path) -> str:
+    raw = data.get("id") if "id" in data else None
+    if raw is None:
+        stem = path.stem.strip()
+        if not stem:
+            raise ValueError("Missing or invalid id.")
+        return stem
+    return _required_string(raw, "id")
+
+
+def _is_path_reference(reference: str) -> bool:
+    return (
+        reference.endswith((".yaml", ".yml"))
+        or "/" in reference
+        or "\\" in reference
+        or Path(reference).is_absolute()
+    )
+
+
+def _resolve_workflow_path(workspace: Path, reference: str) -> Optional[Path]:
+    candidate = Path(reference)
+    if candidate.is_absolute():
+        return candidate if candidate.is_file() else None
+    relative = workspace / reference
+    if relative.is_file():
+        return relative
+    if candidate.parent == Path("."):
+        named = workflows_directory(workspace) / candidate.name
+        if named.is_file():
+            return named
+    return None
+
+
+def _unreadable_workflow_ids(problems: list[str]) -> set[str]:
+    found: set[str] = set()
+    for problem in problems:
+        name = problem.split(":", 1)[0]
+        if name.endswith((".yaml", ".yml")):
+            found.add(Path(name).stem)
+    return found
+
+
+def _require_stages(document: WorkflowDocument) -> WorkflowDocument:
+    if not document.stages:
+        _fail(f"{document.id}: declares no stages.")
+    return document
+
+
+def _readable_workflows(workspace: Path) -> list[tuple[Path, WorkflowDocument]]:
+    loaded, _problems = _read_workflow_directory(workspace)
+    return loaded
+
+
+def _read_workflow_directory(
+    workspace: Path,
+) -> tuple[list[tuple[Path, WorkflowDocument]], list[str]]:
+    directory = workflows_directory(workspace)
+    if not directory.is_dir():
+        return [], ["Workflows directory not found: .agentflow/workflows"]
+    paths = sorted(path for path in directory.glob("*.yaml") if path.is_file())
+    if not paths:
+        return [], ["No workflows in .agentflow/workflows."]
+    from .config import ConfigurationError
+
+    loaded: list[tuple[Path, WorkflowDocument]] = []
+    problems: list[str] = []
+    for path in paths:
+        try:
+            loaded.append((path, _read_workflow_file(path)))
+        except ConfigurationError as exc:
+            problems.append(f"{path.name}: {exc}")
+    return loaded, problems
+
+
 def _check_requires(
     workflow_id: str,
     requires: WorkflowRequires,
     documents: dict[str, WorkflowDocument],
-    directory: Path,
+    failed_ids: set[str],
     problems: list[str],
 ) -> None:
     required = documents.get(requires.workflow)
     if required is None:
-        required_path = directory / f"{requires.workflow}.yaml"
-        if required_path.is_file():
+        if requires.workflow in failed_ids:
             problems.append(f"{workflow_id}: requires {requires.workflow}, which failed to load.")
         else:
             problems.append(

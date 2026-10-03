@@ -58,22 +58,23 @@ def dispatch_named_stage(
     request: StageDispatchRequest,
     runner: Optional[AgentToolRunner] = None,
 ) -> StageDispatchResult:
+    workflow = load_named_workflow(workspace, request.workflow_id)
+    workflow_id = workflow.id
     target = resolve_stage_target(
         workspace,
-        request.workflow_id,
+        workflow_id,
         request.stage_id,
         provider=request.provider,
         model=request.model,
         options=request.options,
     )
-    workflow = load_named_workflow(workspace, request.workflow_id)
     session_id = request.session_id
     if session_id is None:
         if not request.task:
             raise ConfigurationError("The first workflow stage requires --task.")
         session_id = create_workflow_session(
             workspace,
-            request.workflow_id,
+            workflow_id,
             request.task,
             prior_session_id=request.prior_session_id,
         )

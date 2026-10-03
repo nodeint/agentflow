@@ -126,7 +126,7 @@ class DoctorTests(unittest.TestCase):
             workflows.problems,
         )
 
-    def test_reports_a_file_whose_id_does_not_match_its_name(self) -> None:
+    def test_accepts_a_file_whose_id_differs_from_its_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             _write_stage_project(workspace)
@@ -138,12 +138,9 @@ class DoctorTests(unittest.TestCase):
             _config, workflows, _providers = diagnose(
                 workspace, adapters=default_adapters(), which=_which({"codex", "grok"})
             )
-        self.assertFalse(workflows.ok)
-        self.assertEqual(
-            workflows.problems,
-            ("plan-implement.yaml: id is other.",),
-        )
-        self.assertEqual(workflows.items, ())
+        self.assertTrue(workflows.ok)
+        self.assertEqual(workflows.problems, ())
+        self.assertEqual(workflows.items, ("other",))
 
     def test_reports_invalid_config_and_an_unreadable_workflow_together(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

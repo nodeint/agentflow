@@ -222,15 +222,66 @@ stages:
                 encoding="utf-8",
             )
             catalog = load_workflow_catalog(workspace)
-            self.assertEqual(tuple(catalog.documents), ("follow-on", "plan"))
-            self.assertIn("other.yaml: id is renamed.", catalog.problems)
+            self.assertEqual(tuple(catalog.documents), ("follow-on", "renamed", "plan"))
             self.assertIn(
                 "follow-on: requires plan to complete with approved, "
                 "but it completes with revise.",
                 catalog.problems,
             )
-            with self.assertRaisesRegex(ConfigurationError, "other.yaml: id is renamed"):
+            self.assertEqual(load_named_workflow(workspace, "renamed").id, "renamed")
+            with self.assertRaisesRegex(ConfigurationError, "Workflow not found: other"):
                 load_named_workflow(workspace, "other")
+
+    def test_omitted_id_uses_the_file_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            workflows = workspace / ".agentflow" / "workflows"
+            workflows.mkdir(parents=True)
+            (workflows / "plan.yaml").write_text(
+                "stages:\n  - id: plan\n    role: planner\n",
+                encoding="utf-8",
+            )
+            document = load_named_workflow(workspace, "plan")
+            self.assertEqual(document.id, "plan")
+            self.assertEqual(load_workflow_document(workflows / "plan.yaml").id, "plan")
+
+    def test_declared_id_is_used_when_the_file_name_differs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            workflows = workspace / ".agentflow" / "workflows"
+            workflows.mkdir(parents=True)
+            path = workflows / "notes.yaml"
+            path.write_text(
+                "id: plan\nstages:\n  - id: plan\n    role: planner\n",
+                encoding="utf-8",
+            )
+            by_id = load_named_workflow(workspace, "plan")
+            by_path = load_named_workflow(workspace, ".agentflow/workflows/notes.yaml")
+            self.assertEqual(by_id.id, "plan")
+            self.assertEqual(by_path.id, "plan")
+            self.assertEqual(by_path.source, path)
+
+    def test_duplicate_ids_fail_lookup_and_a_path_still_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            workflows = workspace / ".agentflow" / "workflows"
+            workflows.mkdir(parents=True)
+            (workflows / "a.yaml").write_text(
+                "id: plan\nstages:\n  - id: plan\n    role: planner\n",
+                encoding="utf-8",
+            )
+            (workflows / "b.yaml").write_text(
+                "id: plan\nstages:\n  - id: plan\n    role: planner\n",
+                encoding="utf-8",
+            )
+            catalog = load_workflow_catalog(workspace)
+            self.assertEqual(catalog.documents, {})
+            self.assertIn("plan: id is declared by a.yaml, b.yaml.", catalog.problems)
+            with self.assertRaisesRegex(ConfigurationError, "id is declared by a.yaml, b.yaml"):
+                load_named_workflow(workspace, "plan")
+            loaded = load_named_workflow(workspace, ".agentflow/workflows/b.yaml")
+            self.assertEqual(loaded.id, "plan")
+            self.assertEqual(loaded.source, workflows / "b.yaml")
 
     def test_rejects_an_empty_stage_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

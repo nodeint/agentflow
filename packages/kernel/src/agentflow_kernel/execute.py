@@ -88,8 +88,8 @@ def execute_named_workflow(
             raise ConfigurationError("Creating a session requires a workflow.")
         if not request.task:
             raise ConfigurationError("Creating a session requires --task.")
-        workflow_id = request.workflow_id
-        workflow = load_named_workflow(workspace, workflow_id)
+        workflow = load_named_workflow(workspace, request.workflow_id)
+        workflow_id = workflow.id
         resolve_prior_session_id(workspace, workflow, request.prior_session_id)
         if stage_id is not None:
             _require_eligible_stage(workflow, [], "active", stage_id)

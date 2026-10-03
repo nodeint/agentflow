@@ -35,7 +35,10 @@ _UNLIMITED_DISPATCHES_HELP = "Remove the dispatch ceiling for this command."
 
 @workflow_commands.command("start")
 def execute_start(
-    workflow: Annotated[str, typer.Argument(metavar="WORKFLOW", help="Workflow id.")],
+    workflow: Annotated[
+        str,
+        typer.Argument(metavar="WORKFLOW", help="Workflow id, or a path to a workflow file."),
+    ],
     task: Annotated[
         str,
         typer.Option("--task", metavar="TASK", help="Task recorded on the new session."),
@@ -69,7 +72,8 @@ def execute_start(
 ) -> None:
     """Create a session and continue until it stops.
 
-    WORKFLOW is the workflow id. --task is recorded on the new session.
+    WORKFLOW is the workflow id, or a path to a workflow file.
+    --task is recorded on the new session.
     --prior is required when the workflow declares requires. It must be a
     completed session of that workflow with the required decision.
     --attempts limits failed executions of one stage. The default is 3.
@@ -184,7 +188,7 @@ def execute_stage(
         Optional[str],
         typer.Option(
             "--workflow",
-            help="Workflow id. Creates a session and dispatches its next stage once.",
+            help="Workflow id or path. Creates a session and dispatches its next stage once.",
         ),
     ] = None,
     task: Annotated[
